@@ -1,0 +1,52 @@
+# Build artifacts
+*.o
+*.so
+*.a
+*.dylib
+*.dll
+*.exe
+
+# Generated executables
+/quantum_rng_cli
+/test_quantum_rng
+/comprehensive_test
+/edge_cases_test
+/key_exchange_test
+/options_pricing
+/quantum_dice_test
+/quantum_dice_demo
+/quantum_chain_test
+/monte_carlo_test
+/options_pricing_test
+/options_pricing_demo
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Test outputs
+*.txt
+*.log
+*.json
+/results/
+/output/
+
+# Dependencies
+/node_modules/
+/vendor/
+
+# Temporary files
+*.tmp
+*.temp
