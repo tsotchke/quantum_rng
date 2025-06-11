@@ -77,42 +77,53 @@ static DiceType dice_types[] = {
 
 // Play a tone using system beep or aplay
 static void play_tone(double frequency, double duration, double volume) {
-    char command[512];
+    // Debug output to console
+    printf("🎵 Playing %.1f Hz for %.2fs at volume %.2f\n", 
+           frequency, duration, volume);
     
-    // Method 1: Use paplay with sox-generated audio
+    char command[512];
+    int result;
+    
+    // Method 1: Use paplay with sox-generated audio (pipe approach)
     snprintf(command, sizeof(command),
              "sox -n -t wav - synth %.2f sine %.0f vol %.2f 2>/dev/null | "
-             "paplay --volume=%d 2>/dev/null &",
-             duration, frequency, volume, (int)(volume * 65535));
+             "paplay 2>/dev/null &",
+             duration, frequency, volume);
     
-    int result = system(command);
+    result = system(command);
     if (result == 0) {
-        return; // Success
+        printf("✅ Method 1 (sox+paplay pipe) worked\n");
+        return;
     }
+    printf("❌ Method 1 failed with code: %d\n", result);
     
-    // Method 2: Create a temporary WAV file and play with paplay
-    char temp_wav[] = "/tmp/quantum_tone_XXXXXX.wav";
-    int fd = mkstemp(temp_wav);
-    if (fd != -1) {
-        close(fd);
-        
-        char sox_command[256];
-        snprintf(sox_command, sizeof(sox_command),
-                 "sox -n -r 44100 -b 16 '%s' synth %.2f sine %.0f vol %.2f 2>/dev/null",
-                 temp_wav, duration, frequency, volume);
-        
-        if (system(sox_command) == 0) {
-            char play_command[256];
-            snprintf(play_command, sizeof(play_command),
-                     "paplay '%s' 2>/dev/null && rm -f '%s' &",
-                     temp_wav, temp_wav);
-            system(play_command);
+    // Method 2: Create temporary WAV file approach
+    char temp_wav[64];
+    snprintf(temp_wav, sizeof(temp_wav), "/tmp/qt_%.0f_%d.wav", frequency, (int)(duration*1000));
+    
+    char sox_command[256];
+    snprintf(sox_command, sizeof(sox_command),
+             "sox -n -r 44100 -b 16 '%s' synth %.2f sine %.0f vol %.2f 2>/dev/null",
+             temp_wav, duration, frequency, volume);
+    
+    result = system(sox_command);
+    if (result == 0) {
+        char play_command[256];
+        snprintf(play_command, sizeof(play_command),
+                 "paplay '%s' 2>/dev/null ; rm -f '%s' &",
+                 temp_wav, temp_wav);
+        result = system(play_command);
+        if (result == 0) {
+            printf("✅ Method 2 (temp file) worked\n");
             return;
         }
-        unlink(temp_wav);
+        printf("❌ Method 2 play failed: %d\n", result);
+        unlink(temp_wav); // Clean up if play failed
+    } else {
+        printf("❌ Method 2 sox failed: %d\n", result);
     }
     
-    // Method 3: Use ffmpeg with paplay
+    // Method 3: Try ffmpeg approach
     snprintf(command, sizeof(command),
              "ffmpeg -f lavfi -i \"sine=frequency=%.0f:duration=%.2f\" "
              "-f wav - 2>/dev/null | paplay 2>/dev/null &",
@@ -120,15 +131,40 @@ static void play_tone(double frequency, double duration, double volume) {
     
     result = system(command);
     if (result == 0) {
+        printf("✅ Method 3 (ffmpeg) worked\n");
         return;
     }
+    printf("❌ Method 3 failed: %d\n", result);
     
-    // Method 4: Simple PulseAudio beep using pactl
-    system("pactl play-sample bell-terminal 2>/dev/null &");
+    // Method 4: Simple pactl sample play
+    result = system("pactl play-sample bell-terminal 2>/dev/null &");
+    if (result == 0) {
+        printf("✅ Method 4 (pactl sample) worked\n");
+        return;
+    }
+    printf("❌ Method 4 failed: %d\n", result);
     
-    // Method 5: Fallback - print note info
-    printf("🎵 Playing: %.1f Hz (%s)\n", frequency, 
-           frequency == 440.0 ? "A4" : "Musical Note");
+    // Method 5: Direct PulseAudio test tone
+    snprintf(command, sizeof(command),
+             "pactl load-module module-sine frequency=%.0f 2>/dev/null && "
+             "sleep %.2f && "
+             "pactl unload-module module-sine 2>/dev/null &",
+             frequency, duration);
+    
+    result = system(command);
+    if (result == 0) {
+        printf("✅ Method 5 (pactl sine) worked\n");
+        return;
+    }
+    printf("❌ Method 5 failed: %d\n", result);
+    
+    // Final fallback - visual + system beep
+    printf("🔔 All audio methods failed - using fallback\n");
+    printf("🎵 Note: %.1f Hz (%s) 🎵\n", frequency, 
+           (frequency >= 261.63 && frequency <= 783.99) ? "Musical Note" : "Tone");
+    
+    // Try simple beep
+    printf("\a");
     fflush(stdout);
 }
 
@@ -377,40 +413,66 @@ static void create_gui(MusicalDiceApp *app) {
     gtk_combo_box_set_active(GTK_COMBO_BOX(app->dice_combo), 1); // Default to d6
     gtk_container_add(GTK_CONTAINER(dice_frame), app->dice_combo);
     
-    // Controls
+    // Controls frame with improved layout
     GtkWidget *controls_frame = gtk_frame_new("Controls");
     gtk_box_pack_start(GTK_BOX(vbox), controls_frame, FALSE, FALSE, 0);
     gtk_container_set_border_width(GTK_CONTAINER(controls_frame), 8);
     
-    GtkWidget *controls_grid = gtk_grid_new();
-    gtk_grid_set_row_spacing(GTK_GRID(controls_grid), 8);
-    gtk_grid_set_column_spacing(GTK_GRID(controls_grid), 8);
-    gtk_container_add(GTK_CONTAINER(controls_frame), controls_grid);
+    // Use VBox instead of Grid for better control
+    GtkWidget *controls_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_container_add(GTK_CONTAINER(controls_frame), controls_vbox);
     
     // Play/Stop buttons
     GtkWidget *button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     app->play_button = gtk_button_new_with_label("▶️ PLAY");
     app->stop_button = gtk_button_new_with_label("⏹️ STOP");
     gtk_widget_set_sensitive(app->stop_button, FALSE);
+    
+    // Make buttons equal width
+    gtk_widget_set_size_request(app->play_button, 120, 40);
+    gtk_widget_set_size_request(app->stop_button, 120, 40);
+    
     gtk_box_pack_start(GTK_BOX(button_box), app->play_button, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(button_box), app->stop_button, TRUE, TRUE, 0);
-    gtk_grid_attach(GTK_GRID(controls_grid), button_box, 0, 0, 2, 1);
+    gtk_box_pack_start(GTK_BOX(controls_vbox), button_box, FALSE, FALSE, 0);
     
-    // Speed control
-    GtkWidget *speed_label = gtk_label_new("Speed (seconds):");
-    gtk_grid_attach(GTK_GRID(controls_grid), speed_label, 0, 1, 1, 1);
+    // Speed control with full-width slider
+    GtkWidget *speed_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
+    GtkWidget *speed_label = gtk_label_new("Roll Speed (seconds):");
+    gtk_label_set_xalign(GTK_LABEL(speed_label), 0.0); // Left align
+    gtk_box_pack_start(GTK_BOX(speed_box), speed_label, FALSE, FALSE, 0);
+    
     app->speed_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.1, 3.0, 0.1);
     gtk_range_set_value(GTK_RANGE(app->speed_scale), 1.0);
     gtk_scale_set_digits(GTK_SCALE(app->speed_scale), 1);
-    gtk_grid_attach(GTK_GRID(controls_grid), app->speed_scale, 1, 1, 1, 1);
+    gtk_scale_set_draw_value(GTK_SCALE(app->speed_scale), TRUE);
+    gtk_scale_set_value_pos(GTK_SCALE(app->speed_scale), GTK_POS_RIGHT);
     
-    // Volume control
+    // Make slider expand to full width
+    gtk_widget_set_hexpand(app->speed_scale, TRUE);
+    gtk_widget_set_size_request(app->speed_scale, -1, 40);
+    
+    gtk_box_pack_start(GTK_BOX(speed_box), app->speed_scale, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls_vbox), speed_box, FALSE, FALSE, 0);
+    
+    // Volume control with full-width slider
+    GtkWidget *volume_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
     GtkWidget *volume_label = gtk_label_new("Volume:");
-    gtk_grid_attach(GTK_GRID(controls_grid), volume_label, 0, 2, 1, 1);
+    gtk_label_set_xalign(GTK_LABEL(volume_label), 0.0); // Left align
+    gtk_box_pack_start(GTK_BOX(volume_box), volume_label, FALSE, FALSE, 0);
+    
     app->volume_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 0.1);
     gtk_range_set_value(GTK_RANGE(app->volume_scale), 0.5);
     gtk_scale_set_digits(GTK_SCALE(app->volume_scale), 1);
-    gtk_grid_attach(GTK_GRID(controls_grid), app->volume_scale, 1, 2, 1, 1);
+    gtk_scale_set_draw_value(GTK_SCALE(app->volume_scale), TRUE);
+    gtk_scale_set_value_pos(GTK_SCALE(app->volume_scale), GTK_POS_RIGHT);
+    
+    // Make slider expand to full width
+    gtk_widget_set_hexpand(app->volume_scale, TRUE);
+    gtk_widget_set_size_request(app->volume_scale, -1, 40);
+    
+    gtk_box_pack_start(GTK_BOX(volume_box), app->volume_scale, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(controls_vbox), volume_box, FALSE, FALSE, 0);
     
     // Current status
     GtkWidget *status_frame = gtk_frame_new("Current Status");
@@ -421,9 +483,11 @@ static void create_gui(MusicalDiceApp *app) {
     gtk_container_add(GTK_CONTAINER(status_frame), status_vbox);
     
     app->current_roll_label = gtk_label_new("🎲 Select dice and click PLAY 🎲");
+    gtk_widget_set_size_request(app->current_roll_label, -1, 35);
     gtk_box_pack_start(GTK_BOX(status_vbox), app->current_roll_label, FALSE, FALSE, 0);
     
     app->current_note_label = gtk_label_new("🎵 --- 🎵");
+    gtk_widget_set_size_request(app->current_note_label, -1, 35);
     gtk_box_pack_start(GTK_BOX(status_vbox), app->current_note_label, FALSE, FALSE, 0);
     
     // History
