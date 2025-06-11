@@ -77,33 +77,59 @@ static DiceType dice_types[] = {
 
 // Play a tone using system beep or aplay
 static void play_tone(double frequency, double duration, double volume) {
-    // Method 1: Try using speaker-test (most reliable)
-    char command[256];
-    int freq_int = (int)frequency;
-    int duration_ms = (int)(duration * 1000);
+    char command[512];
     
-    // Generate a simple sine wave tone using speaker-test
-    snprintf(command, sizeof(command), 
-             "timeout 0.5s speaker-test -t sine -f %d >/dev/null 2>&1 &", 
-             freq_int);
+    // Method 1: Use paplay with sox-generated audio
+    snprintf(command, sizeof(command),
+             "sox -n -t wav - synth %.2f sine %.0f vol %.2f 2>/dev/null | "
+             "paplay --volume=%d 2>/dev/null &",
+             duration, frequency, volume, (int)(volume * 65535));
     
-    if (system(command) != 0) {
-        // Method 2: Try using pactl (PulseAudio)
-        snprintf(command, sizeof(command),
-                 "pactl upload-sample /dev/zero tone && "
-                 "pactl play-sample tone >/dev/null 2>&1 &");
-        
-        if (system(command) != 0) {
-            // Method 3: Simple beep fallback
-            printf("\a"); // System beep
-            fflush(stdout);
-        }
+    int result = system(command);
+    if (result == 0) {
+        return; // Success
     }
     
-    // Alternative: Create a sine wave and play with aplay
-    // This is more complex but gives better control
-    (void)duration; // Suppress unused warning for now
-    (void)volume;   // Suppress unused warning for now
+    // Method 2: Create a temporary WAV file and play with paplay
+    char temp_wav[] = "/tmp/quantum_tone_XXXXXX.wav";
+    int fd = mkstemp(temp_wav);
+    if (fd != -1) {
+        close(fd);
+        
+        char sox_command[256];
+        snprintf(sox_command, sizeof(sox_command),
+                 "sox -n -r 44100 -b 16 '%s' synth %.2f sine %.0f vol %.2f 2>/dev/null",
+                 temp_wav, duration, frequency, volume);
+        
+        if (system(sox_command) == 0) {
+            char play_command[256];
+            snprintf(play_command, sizeof(play_command),
+                     "paplay '%s' 2>/dev/null && rm -f '%s' &",
+                     temp_wav, temp_wav);
+            system(play_command);
+            return;
+        }
+        unlink(temp_wav);
+    }
+    
+    // Method 3: Use ffmpeg with paplay
+    snprintf(command, sizeof(command),
+             "ffmpeg -f lavfi -i \"sine=frequency=%.0f:duration=%.2f\" "
+             "-f wav - 2>/dev/null | paplay 2>/dev/null &",
+             frequency, duration);
+    
+    result = system(command);
+    if (result == 0) {
+        return;
+    }
+    
+    // Method 4: Simple PulseAudio beep using pactl
+    system("pactl play-sample bell-terminal 2>/dev/null &");
+    
+    // Method 5: Fallback - print note info
+    printf("🎵 Playing: %.1f Hz (%s)\n", frequency, 
+           frequency == 440.0 ? "A4" : "Musical Note");
+    fflush(stdout);
 }
 
 // Map dice roll to musical note
