@@ -99,3 +99,6 @@ Thumbs.db
 /terrain_generation
 /traffic_sim
 /weather_sim
+
+# Historical/internal docs — kept locally, not published
+docs/archive/
