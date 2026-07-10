@@ -439,19 +439,27 @@ int32_t qrng_range32(qrng_ctx *ctx, int32_t min, int32_t max) {
         return max;
     }
     
-    uint32_t range = (uint32_t)(max - min + 1);
-    if (range == 0) {
-        return max;
+    /* Span in [1, 2^32]. Compute in 64-bit signed so (max - min + 1) can never
+       overflow: the naive int32 form is signed-overflow UB at the full span,
+       and at -O2 the compiler then proves range != 0 and deletes the
+       (range == 0) guard below, leaving r % 0 (SIGFPE). */
+    uint64_t span = (uint64_t)((int64_t)max - (int64_t)min) + 1;
+
+    if (span > 0xFFFFFFFFULL) {
+        /* Full 32-bit span: every uint32 is valid; no rejection or modulo. */
+        return (int32_t)((uint32_t)min + (uint32_t)qrng_uint64(ctx));
     }
-    
-    uint32_t threshold = (uint32_t)-range % range;
+
+    uint32_t range = (uint32_t)span;            /* guaranteed nonzero */
+    uint32_t threshold = (0u - range) % range;  /* == 2^32 % range, unbiased */
     uint32_t r;
-    
+
     do {
         r = (uint32_t)qrng_uint64(ctx);
     } while (r < threshold);
-    
-    return min + (r % range);
+
+    /* Unsigned add avoids signed-overflow UB when min < 0. */
+    return (int32_t)((uint32_t)min + (r % range));
 }
 
 uint64_t qrng_range64(qrng_ctx *ctx, uint64_t min, uint64_t max) {
@@ -465,16 +473,18 @@ uint64_t qrng_range64(qrng_ctx *ctx, uint64_t min, uint64_t max) {
     
     uint64_t range = max - min + 1;
     if (range == 0) {
-        return max;
+        /* range wrapped => full 2^64 span (min==0, max==UINT64_MAX): every
+           uint64 is valid. Return a raw draw, not the constant max. */
+        return qrng_uint64(ctx);
     }
-    
-    uint64_t threshold = -range % range;
+
+    uint64_t threshold = (0uLL - range) % range;
     uint64_t r;
-    
+
     do {
         r = qrng_uint64(ctx);
     } while (r < threshold);
-    
+
     return min + (r % range);
 }
 
