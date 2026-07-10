@@ -19,8 +19,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # master is the release gate; let those runs finish for a complete signal.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+  # Always supersede an older in-flight run for the same ref. This keeps CI on
+  # the latest commit and prevents a run whose runner is stuck in the queue
+  # (e.g. scarce hosted macOS runners) from blocking newer runs behind it.
+  cancel-in-progress: true
 
 jobs:
   build-and-verify:
