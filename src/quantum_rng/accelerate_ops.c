@@ -339,6 +339,7 @@ void accelerate_complex_scale(
         }
     }
 #else
+    (void)scalar_real;
     (void)scalar_imag;
     for (size_t i = 0; i < n; i++) {
         result[i] = a[i] * scalar;

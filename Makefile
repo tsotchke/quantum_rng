@@ -14,6 +14,14 @@ ifdef NATIVE
 CFLAGS += -march=native
 endif
 
+# The x86_64 SIMD path (simd_ops.c) uses SSE3 horizontal-add intrinsics
+# (_mm_hadd_pd). SSE3 is present on every x86_64 CPU shipped since ~2005, but is
+# not in the bare x86_64 baseline, so enable it explicitly for portable x86
+# builds. (ARM/AArch64 uses NEON, which is mandatory there.)
+ifeq ($(shell uname -m),x86_64)
+CFLAGS += -msse3
+endif
+
 # M2 ULTRA PARALLELIZATION - Phase 1: OpenMP 24-Core Support
 OPENMP_FLAGS =
 OPENMP_LIBS =

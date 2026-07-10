@@ -10,6 +10,9 @@
     #ifdef __SSE2__
         #include <emmintrin.h>  // SSE2
     #endif
+    #ifdef __SSE3__
+        #include <pmmintrin.h>  // SSE3: _mm_hadd_pd, _mm_addsub_pd (used below)
+    #endif
     #ifdef __AVX2__
         #include <immintrin.h>  // AVX2
     #endif

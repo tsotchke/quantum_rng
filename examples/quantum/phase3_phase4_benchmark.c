@@ -23,7 +23,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <sys/sysctl.h>
+#if defined(__APPLE__)
+#include <sys/sysctl.h>   // sysctlbyname (macOS)
+#else
+#include <unistd.h>       // sysconf (POSIX / Linux)
+#endif
 #include <sys/time.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -120,41 +124,73 @@ static void print_header(const char* title) {
 // ============================================================================
 
 static void print_system_info(void) {
-    print_header("M2 ULTRA SYSTEM INFORMATION");
-    
-    // CPU info
-    char cpu_brand[256];
+    print_header("SYSTEM INFORMATION");
+
+#if defined(__APPLE__)
+    // macOS: query the system via sysctl.
+    char cpu_brand[256] = "unknown";
     size_t size = sizeof(cpu_brand);
     sysctlbyname("machdep.cpu.brand_string", &cpu_brand, &size, NULL, 0);
     printf("CPU: %s\n", cpu_brand);
-    
-    // Core counts
+
     int num_cores = 0;
     size = sizeof(num_cores);
     sysctlbyname("hw.physicalcpu", &num_cores, &size, NULL, 0);
     printf("Physical cores: %d\n", num_cores);
-    
+
     int num_logical = 0;
+    size = sizeof(num_logical);
     sysctlbyname("hw.logicalcpu", &num_logical, &size, NULL, 0);
     printf("Logical cores: %d\n", num_logical);
-    
-    // Memory
+
     int64_t mem_size = 0;
     size = sizeof(mem_size);
     sysctlbyname("hw.memsize", &mem_size, &size, NULL, 0);
     printf("Total RAM: %.1f GB\n", mem_size / (1024.0 * 1024.0 * 1024.0));
-    
-    // Cache sizes
+
     int l1_cache = 0, l2_cache = 0;
     size = sizeof(l1_cache);
     sysctlbyname("hw.l1dcachesize", &l1_cache, &size, NULL, 0);
+    size = sizeof(l2_cache);
     sysctlbyname("hw.l2cachesize", &l2_cache, &size, NULL, 0);
     printf("L1 Cache: %d KB, L2 Cache: %d KB\n", l1_cache / 1024, l2_cache / 1024);
-    
-    // Accelerate framework
+#else
+    // POSIX / Linux: read the CPU model from /proc/cpuinfo and counts/memory
+    // from sysconf.
+    char cpu_brand[256] = "unknown";
+    FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
+    if (cpuinfo) {
+        char line[256];
+        while (fgets(line, sizeof(line), cpuinfo)) {
+            if (strncmp(line, "model name", 10) == 0) {
+                char *colon = strchr(line, ':');
+                if (colon) {
+                    char *v = colon + 1;
+                    while (*v == ' ') v++;
+                    v[strcspn(v, "\n")] = '\0';
+                    snprintf(cpu_brand, sizeof(cpu_brand), "%s", v);
+                }
+                break;
+            }
+        }
+        fclose(cpuinfo);
+    }
+    printf("CPU: %s\n", cpu_brand);
+
+    long num_logical = sysconf(_SC_NPROCESSORS_ONLN);
+    printf("Logical cores: %ld\n", num_logical > 0 ? num_logical : 0L);
+
+    long pages = sysconf(_SC_PHYS_PAGES);
+    long page_size = sysconf(_SC_PAGE_SIZE);
+    if (pages > 0 && page_size > 0) {
+        printf("Total RAM: %.1f GB\n",
+               (double)pages * (double)page_size / (1024.0 * 1024.0 * 1024.0));
+    }
+#endif
+
     printf("\nAccelerate Framework: %s\n", accelerate_get_capabilities());
-    printf("AMX Available: %s\n", accelerate_is_available() ? "YES (2× 512-bit matrix units)" : "NO");
-    
+    printf("AMX Available: %s\n", accelerate_is_available() ? "YES (2x 512-bit matrix units)" : "NO");
+
     printf("\n");
 }
 
