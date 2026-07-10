@@ -1,3 +1,9 @@
+#if defined(_WIN32)
+/* Enable rand_s() (backed by the OS CSPRNG / RtlGenRandom); must be defined
+ * before <stdlib.h>. */
+#define _CRT_RAND_S
+#endif
+
 #include "hardware_entropy.h"
 #include <stdlib.h>
 #include <string.h>
@@ -204,7 +210,19 @@ int rdseed_get_uint64(uint64_t *value) {
 // ============================================================================
 
 ssize_t entropy_getrandom(uint8_t *buffer, size_t size, unsigned int flags) {
-#ifdef __linux__
+#if defined(_WIN32)
+    // Windows: rand_s() draws from the OS cryptographic RNG (RtlGenRandom).
+    (void)flags;
+    size_t i = 0;
+    while (i < size) {
+        unsigned int r;
+        if (rand_s(&r) != 0) { errno = EIO; return -1; }
+        size_t chunk = (size - i < sizeof(r)) ? (size - i) : sizeof(r);
+        memcpy(buffer + i, &r, chunk);
+        i += chunk;
+    }
+    return (ssize_t)size;
+#elif defined(__linux__)
     #ifdef SYS_getrandom
     return syscall(SYS_getrandom, buffer, size, flags);
     #else
@@ -425,13 +443,20 @@ entropy_error_t entropy_init(entropy_ctx_t *ctx) {
     uint8_t test_byte;
     ctx->caps.has_getrandom = (entropy_getrandom(&test_byte, 1, 0) > 0);
     
-    // Try to open /dev/random
+    // Try to open the POSIX random devices. These do not exist on native
+    // Windows, where getrandom() (rand_s) is the OS entropy source instead.
+#ifndef _WIN32
     ctx->dev_random_fd = open("/dev/random", O_RDONLY | O_NONBLOCK);
     ctx->caps.has_dev_random = (ctx->dev_random_fd >= 0);
-    
-    // Try to open /dev/urandom
+
     ctx->dev_urandom_fd = open("/dev/urandom", O_RDONLY);
     ctx->caps.has_dev_urandom = (ctx->dev_urandom_fd >= 0);
+#else
+    ctx->dev_random_fd = -1;
+    ctx->dev_urandom_fd = -1;
+    ctx->caps.has_dev_random = 0;
+    ctx->caps.has_dev_urandom = 0;
+#endif
     
     // Determine preferred source (best quality first)
     if (ctx->caps.has_rdseed) {
@@ -487,11 +512,16 @@ ssize_t entropy_dev_random(entropy_ctx_t *ctx, uint8_t *buffer, size_t size, int
     if (!ctx || !buffer || size == 0) return -1;
     if (ctx->dev_random_fd < 0) return -1;
     
-    // Set blocking mode if requested
+    // Set blocking mode if requested (POSIX only; this path is unreachable on
+    // Windows, where dev_random_fd is always -1).
+#ifndef _WIN32
     if (blocking) {
         int flags = fcntl(ctx->dev_random_fd, F_GETFL, 0);
         fcntl(ctx->dev_random_fd, F_SETFL, flags & ~O_NONBLOCK);
     }
+#else
+    (void)blocking;
+#endif
     
     ssize_t total = 0;
     while (total < (ssize_t)size) {

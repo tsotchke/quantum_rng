@@ -154,7 +154,7 @@ static void print_system_info(void) {
     size = sizeof(l2_cache);
     sysctlbyname("hw.l2cachesize", &l2_cache, &size, NULL, 0);
     printf("L1 Cache: %d KB, L2 Cache: %d KB\n", l1_cache / 1024, l2_cache / 1024);
-#else
+#elif !defined(_WIN32)
     // POSIX / Linux: read the CPU model from /proc/cpuinfo and counts/memory
     // from sysconf.
     char cpu_brand[256] = "unknown";
@@ -186,6 +186,12 @@ static void print_system_info(void) {
         printf("Total RAM: %.1f GB\n",
                (double)pages * (double)page_size / (1024.0 * 1024.0 * 1024.0));
     }
+#else
+    // Windows: report logical CPUs from the environment (avoids pulling in the
+    // full <windows.h> just for a benchmark banner).
+    const char *ncpu = getenv("NUMBER_OF_PROCESSORS");
+    printf("CPU: %s\n", "unknown");
+    printf("Logical cores: %s\n", ncpu ? ncpu : "unknown");
 #endif
 
     printf("\nAccelerate Framework: %s\n", accelerate_get_capabilities());

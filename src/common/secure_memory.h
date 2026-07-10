@@ -14,9 +14,9 @@
  * 
  * Uses platform-specific implementations when available:
  * - C11 memset_s() (Annex K)
- * - Windows SecureZeroMemory()
  * - OpenBSD/glibc explicit_bzero()
- * - Fallback with memory barrier
+ * - Portable fallback with volatile writes + a compiler memory barrier
+ *   (used on Windows/MinGW and anywhere the above are unavailable)
  */
 
 /**
@@ -40,11 +40,7 @@ static inline void secure_memzero(void *ptr, size_t size) {
 #if defined(__STDC_LIB_EXT1__) && defined(__STDC_WANT_LIB_EXT1__)
     // C11 Annex K - memset_s
     memset_s(ptr, size, 0, size);
-    
-#elif defined(_WIN32) || defined(_WIN64)
-    // Windows SecureZeroMemory
-    SecureZeroMemory(ptr, size);
-    
+
 #elif defined(__OpenBSD__) || (defined(__GLIBC__) && \
       (__GLIBC__ > 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 25)))
     // OpenBSD or glibc >= 2.25 - explicit_bzero

@@ -102,9 +102,22 @@ TEST_OBJS = $(TEST_SRCS:.c=.o)
 # Combined object files for complete library
 ALL_LIB_OBJS = $(CORE_OBJS) $(ENTROPY_OBJS) $(HEALTH_OBJS) $(SECURE_RNG_OBJS) $(PROFILING_OBJS)
 
+# Windows (MSYS2 / MinGW) detection. On Windows the linker does not resolve
+# `-lquantumrng` against a .so, so the library is built as a static archive
+# (.a) there; this also means the built programs have no runtime DLL to locate.
+UNAME_S := $(shell uname)
+ifneq (,$(findstring MSYS,$(UNAME_S))$(findstring MINGW,$(UNAME_S)))
+    WINDOWS := 1
+endif
+
 # Output files
+ifdef WINDOWS
+LIB = libquantumrng.a
+SECURE_LIB = libsecure_qrng.a
+else
 LIB = libquantumrng.so
 SECURE_LIB = libsecure_qrng.so
+endif
 CLI = quantum_rng_cli
 CLI_V2 = qrng_v2
 TEST_BIN = test_quantum_rng
@@ -138,13 +151,21 @@ all: $(LIB) $(SECURE_LIB) $(CLI) $(CLI_V2) $(QRNG_V3_TEST)
 	@echo "Running Quantum RNG v3.0 optimized tests..."
 	LD_LIBRARY_PATH=. ./$(QRNG_V3_TEST)
 
-# Library builds
+# Library builds (shared .so on Linux/macOS; static .a on Windows/MSYS)
 $(LIB): $(CORE_OBJS) $(ENTROPY_OBJS) $(HEALTH_OBJS) $(PROFILING_OBJS)
+ifdef WINDOWS
+	ar rcs $@ $^
+else
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
+endif
 
 # Secure RNG library (includes everything)
 $(SECURE_LIB): $(ALL_LIB_OBJS)
+ifdef WINDOWS
+	ar rcs $@ $^
+else
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
+endif
 
 # CLI builds
 $(CLI): src/quantum_rng_cli.o $(LIB)
