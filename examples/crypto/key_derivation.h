@@ -59,6 +59,7 @@ typedef struct {
 // KDF result
 typedef struct {
     uint8_t *derived_key;
+    size_t key_size;        // Number of bytes in derived_key
     uint8_t salt[SALT_SIZE];
     double entropy_estimate;
     uint64_t memory_used;

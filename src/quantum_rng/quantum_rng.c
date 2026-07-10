@@ -1,4 +1,5 @@
 #include "quantum_rng.h"
+#include "../common/secure_memory.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -28,6 +29,7 @@ static inline uint64_t splitmix64(uint64_t x);
 static inline uint64_t hadamard_mix(uint64_t x);
 static uint64_t get_system_entropy(void);
 static uint64_t get_runtime_entropy(qrng_ctx *ctx);
+static uint64_t absorb_seed(const uint8_t *seed, size_t seed_len);
 static inline uint64_t hadamard_gate(uint64_t x);
 static inline uint64_t phase_gate(uint64_t x, uint64_t angle);
 static uint64_t measure_state(qrng_ctx *ctx, double quantum_state, uint64_t last);
@@ -101,6 +103,22 @@ static uint64_t get_system_entropy(void) {
     return entropy;
 }
 
+// Deterministic seed absorption.
+//
+// Folds the ENTIRE seed (every byte) together with the seed length into a
+// single 64-bit value with good diffusion. Used to derive the seeded-mode
+// state purely from the caller-provided seed, so that identical seeds yield
+// byte-identical streams while different seeds (including seeds that differ
+// only in trailing bytes or in length) yield different streams.
+static uint64_t absorb_seed(const uint8_t *seed, size_t seed_len) {
+    uint64_t h = QRNG_SQRT2 ^ splitmix64((uint64_t)seed_len + QRNG_GOLDEN_RATIO);
+    for (size_t i = 0; i < seed_len; i++) {
+        h ^= (uint64_t)seed[i] + QRNG_GOLDEN_RATIO + (h << 6) + (h >> 2);
+        h = hadamard_mix(h);
+    }
+    return h ^ splitmix64((uint64_t)seed_len);
+}
+
 // Enhanced runtime entropy collection
 static uint64_t get_runtime_entropy(qrng_ctx *ctx) {
     struct timeval tv;
@@ -153,8 +171,8 @@ static inline uint64_t phase_gate(uint64_t x, uint64_t angle) {
 
 // Enhanced measurement function with improved entropy collection
 static uint64_t measure_state(qrng_ctx *ctx, double quantum_state, uint64_t last) {
-    // Update runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
+    // Update runtime entropy (skipped in seeded mode for a reproducible stream)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
     
     volatile double collapsed = quantum_noise(quantum_state + 
         (double)ctx->runtime_entropy / UINT64_MAX);
@@ -190,10 +208,10 @@ static void quantum_step(qrng_ctx *ctx) {
     
     ctx->counter++;
     uint64_t mixer = splitmix64(ctx->counter * QRNG_GOLDEN_RATIO);
-    
-    // Update runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
-    
+
+    // Update runtime entropy (skipped in seeded mode for a reproducible stream)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
+
     // Enhanced mixing rounds with improved quantum gates
     for (int round = 0; round < QRNG_MIXING_ROUNDS; round++) {
         mixer = hadamard_mix(mixer ^ ctx->pool_mixer ^ ctx->runtime_entropy);
@@ -260,14 +278,29 @@ qrng_error qrng_init(qrng_ctx **ctx, const uint8_t *seed, size_t seed_len) {
     
     *ctx = calloc(1, sizeof(qrng_ctx));
     if (!*ctx) return QRNG_ERROR_NULL_CONTEXT;
-    
-    // Initialize context with system-specific entropy
-    gettimeofday(&(*ctx)->init_time, NULL);
-    (*ctx)->pid = getpid();
-    (*ctx)->system_entropy = get_system_entropy();
+
+    // A caller-provided seed selects deterministic (reproducible) mode: the
+    // entire output stream becomes a pure function of the seed, with NO
+    // per-call or per-init wall-clock/pid/rdtsc entropy folded in. Without a
+    // seed we retain the original non-deterministic behavior, drawing
+    // system/runtime entropy once here (and refreshing it per call below).
+    (*ctx)->seeded = (seed != NULL && seed_len >= 1) ? 1 : 0;
+
+    if ((*ctx)->seeded) {
+        // Deterministic: derive all base entropy from the full seed only.
+        // init_time and pid remain zero (from calloc) so they contribute
+        // nothing non-deterministic; runtime_entropy stays zero throughout.
+        (*ctx)->system_entropy = absorb_seed(seed, seed_len);
+    } else {
+        // Non-deterministic: seed the state from OS/runtime entropy once.
+        gettimeofday(&(*ctx)->init_time, NULL);
+        (*ctx)->pid = getpid();
+        (*ctx)->system_entropy = get_system_entropy();
+    }
     (*ctx)->unique_id = splitmix64((*ctx)->system_entropy);
     (*ctx)->pool_mixer = QRNG_HEISENBERG ^ (*ctx)->unique_id;
-    (*ctx)->runtime_entropy = get_runtime_entropy(*ctx);
+    // runtime_entropy stays 0 in seeded mode (reproducible); drawn once here otherwise.
+    if (!(*ctx)->seeded) (*ctx)->runtime_entropy = get_runtime_entropy(*ctx);
     
     // Initialize entropy pool with multiple sources
     for (int i = 0; i < 16; i++) {
@@ -317,7 +350,7 @@ qrng_error qrng_init(qrng_ctx **ctx, const uint8_t *seed, size_t seed_len) {
 
 void qrng_free(qrng_ctx *ctx) {
     if (ctx) {
-        memset(ctx, 0, sizeof(*ctx));
+        secure_memzero(ctx, sizeof(*ctx));
         free(ctx);
     }
 }
@@ -327,10 +360,14 @@ qrng_error qrng_reseed(qrng_ctx *ctx, const uint8_t *seed, size_t seed_len) {
     if (!seed && seed_len > 0) return QRNG_ERROR_NULL_BUFFER;
     if (seed_len == 0) return QRNG_ERROR_INVALID_LENGTH;
     
-    // Update runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
-    
-    uint64_t mixer = QRNG_GOLDEN_RATIO ^ ctx->runtime_entropy;
+    // Update runtime entropy (skipped in seeded mode for a reproducible stream)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
+
+    // Fold the ENTIRE seed (all bytes + length) into the mixer so the reseed
+    // depends on every seed byte, not just the first QRNG_NUM_QUBITS. Reseed
+    // stays a deterministic function of (prior state, seed).
+    uint64_t seed_digest = absorb_seed(seed, seed_len);
+    uint64_t mixer = QRNG_GOLDEN_RATIO ^ ctx->runtime_entropy ^ seed_digest;
     for (size_t i = 0; i < seed_len && i < QRNG_NUM_QUBITS; i++) {
         mixer = splitmix64(mixer ^ seed[i] ^ ctx->runtime_entropy);
         ctx->phase[i] = hadamard_gate(ctx->phase[i] ^ seed[i] ^ mixer ^ 
@@ -380,8 +417,8 @@ uint64_t qrng_uint64(qrng_ctx *ctx) {
     uint64_t result;
     qrng_bytes(ctx, (uint8_t*)&result, sizeof(result));
     
-    // Enhanced output mixing with runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
+    // Enhanced output mixing with runtime entropy (skipped in seeded mode)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
     result = splitmix64(result ^ ctx->runtime_entropy);
     result ^= QRNG_PAULI_X * (result >> 27);
     result *= QRNG_HEISENBERG;
@@ -450,8 +487,8 @@ double qrng_get_entropy_estimate(qrng_ctx *ctx) {
         entropy += -log2(ctx->entropy_pool[i] + 1e-10);
     }
     
-    // Include runtime entropy in the estimate
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
+    // Include runtime entropy in the estimate (skipped in seeded mode)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
     entropy += -log2((double)(ctx->runtime_entropy & 0xFF) / 256.0 + 1e-10);
     
     return entropy / 17.0;  // Average over all sources
@@ -462,8 +499,8 @@ qrng_error qrng_entangle_states(qrng_ctx *ctx, uint8_t *state1, uint8_t *state2,
     if (!state1 || !state2) return QRNG_ERROR_NULL_BUFFER;
     if (len == 0) return QRNG_ERROR_INVALID_LENGTH;
 
-    // Update runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
+    // Update runtime entropy (skipped in seeded mode for a reproducible stream)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
 
     // Create entanglement between states using quantum gates
     uint64_t mixer = splitmix64(ctx->counter * QRNG_GOLDEN_RATIO);
@@ -500,8 +537,8 @@ qrng_error qrng_measure_state(qrng_ctx *ctx, uint8_t *state, size_t len) {
     if (!state) return QRNG_ERROR_NULL_BUFFER;
     if (len == 0) return QRNG_ERROR_INVALID_LENGTH;
 
-    // Update runtime entropy
-    ctx->runtime_entropy = get_runtime_entropy(ctx);
+    // Update runtime entropy (skipped in seeded mode for a reproducible stream)
+    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
 
     // Measure each byte of the state
     uint64_t mixer = splitmix64(ctx->counter * QRNG_GOLDEN_RATIO);

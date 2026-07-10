@@ -5,6 +5,7 @@
 #include "../../src/quantum_rng/quantum_rng.h"
 
 // Internal constants
+#define QUANTUM_MIXING_ROUNDS 3
 #define MAX_BATCH_SIZE 1000
 
 struct quantum_dice_t {
@@ -63,20 +64,23 @@ int quantum_dice_roll(quantum_dice_t *dice) {
     if (!dice) {
         return -1;
     }
-    
-    // Use quantum RNG to generate a high-precision double
-    double raw;
-    uint32_t scaled;
-    
-    // Use rejection sampling to ensure perfect uniformity
+
+    // Unbiased rejection sampling over [1, sides].
+    //
+    // A 64-bit draw mapped with a plain modulo is slightly biased whenever
+    // `sides` does not divide 2^64 evenly: the low `2^64 mod sides` outcomes
+    // are one draw more likely than the rest. We eliminate that bias exactly
+    // by rejecting draws that fall in that unfair tail, so every face is
+    // equally likely with zero residual bias -- not merely below a detection
+    // threshold.
+    const uint64_t sides = (uint64_t)dice->sides;
+    const uint64_t threshold = (0ULL - sides) % sides;  // == 2^64 mod sides
+    uint64_t r;
     do {
-        raw = qrng_double(dice->qrng);
-        // Scale to range [0, 2^32)
-        scaled = (uint32_t)(raw * 4294967296.0);
-    } while (scaled >= ((4294967296U / dice->sides) * dice->sides));
-    
-    // Map to [1, sides] with perfect uniformity
-    return (scaled % dice->sides) + 1;
+        r = qrng_uint64(dice->qrng);
+    } while (r < threshold);
+
+    return (int)(r % sides) + 1;
 }
 
 int quantum_dice_sides(const quantum_dice_t *dice) {
@@ -88,19 +92,20 @@ int quantum_dice_batch_roll(quantum_dice_t *dice, int *results, int count) {
         return -1;
     }
     
-    // Use same algorithm as single roll for perfect uniformity
+    // Each roll is an independent, exactly-unbiased draw over [1, sides],
+    // using the same rejection-sampling scheme as the single-roll path.
+    // (An earlier version averaged several uniforms per roll, which produced
+    // a bell-shaped Irwin-Hall distribution biased toward the middle faces.)
+    const uint64_t sides = (uint64_t)dice->sides;
+    const uint64_t threshold = (0ULL - sides) % sides;  // == 2^64 mod sides
     for (int i = 0; i < count; i++) {
-        double raw;
-        uint32_t scaled;
-        
+        uint64_t r;
         do {
-            raw = qrng_double(dice->qrng);
-            scaled = (uint32_t)(raw * 4294967296.0);
-        } while (scaled >= ((4294967296U / dice->sides) * dice->sides));
-        
-        results[i] = (scaled % dice->sides) + 1;
+            r = qrng_uint64(dice->qrng);
+        } while (r < threshold);
+        results[i] = (int)(r % sides) + 1;
     }
-    
+
     return 0;
 }
 
@@ -109,11 +114,15 @@ int quantum_dice_reset(quantum_dice_t *dice) {
         return -1;
     }
     
-    // Clear state buffer
+    // Clear the batch buffer so stale variates cannot be reused
     memset(dice->state_buffer, 0, MAX_BATCH_SIZE * sizeof(double));
-    
-    // Single quantum sample to reset state
-    qrng_double(dice->qrng);
-    
+
+    // Advance the underlying RNG stream a few steps. This does not
+    // "re-randomize" anything (the stream is already unpredictable);
+    // it simply discards the next few outputs.
+    for (int i = 0; i < QUANTUM_MIXING_ROUNDS; i++) {
+        (void)qrng_double(dice->qrng);
+    }
+
     return 0;
 }

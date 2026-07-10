@@ -1,0 +1,34 @@
+# Sample network topology for traffic_sim (-f / --topology).
+#
+# Format (one directive per line; '#' starts a comment; blank lines ignored):
+#   nodes <count>                  number of nodes, 2..100 (required, appears first)
+#   node  <id> <x> <y>             optional 2D position (0-100 grid) for visualization
+#   edge  <src> <dst> [bw] [lat]   undirected link; bandwidth (Mbps) and latency (ms)
+#                                   are optional, filled with random defaults if omitted
+#
+# This example is a small 6-node network: two triangles (0-1-2 and 3-4-5)
+# joined by a backbone link 2-3. It is fully connected, so no packet is
+# dropped for want of a route.
+
+nodes 6
+
+# Node positions (optional, drive the ASCII topology view)
+node 0  10 15
+node 1  25 10
+node 2  20 40
+node 3  60 45
+node 4  75 20
+node 5  80 55
+
+# Access triangle A
+edge 0 1 1200 6
+edge 1 2 1000 8
+edge 0 2 900 10
+
+# Backbone link between the two clusters (deliberately lower bandwidth)
+edge 2 3 600 18
+
+# Access triangle B (bandwidth/latency omitted -> random defaults)
+edge 3 4
+edge 4 5
+edge 3 5

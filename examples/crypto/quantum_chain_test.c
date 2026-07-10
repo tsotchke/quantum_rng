@@ -53,11 +53,12 @@ static void test_block_addition() {
     
     assert(chain.length == 11); // Including genesis block
     assert(chain.latest->index == 10);
-    
-    // Verify block linkage
+
+    // Verify block linkage - walk forward from genesis
     QuantumBlock* current = chain.genesis;
     while (current->next != NULL) {
-        assert(memcmp(current->next->prev_hash, current->hash, HASH_SIZE) == 0);
+        // Current block's hash should match next block's prev_hash
+        assert(memcmp(current->hash, current->next->prev_hash, HASH_SIZE) == 0);
         current = current->next;
     }
     

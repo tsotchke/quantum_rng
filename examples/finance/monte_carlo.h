@@ -63,7 +63,6 @@ typedef struct {
 // Function declarations
 void init_simulation_config(simulation_config_t *config);
 void parse_simulation_args(int argc, char *argv[], simulation_config_t *config);
-void print_simulation_usage(const char *program_name);
 simulation_results_t run_simulation(const simulation_config_t *config);
 void print_results(FILE *output, const simulation_results_t *results, const simulation_config_t *config);
 void output_results_json(FILE *output, const simulation_results_t *results, const simulation_config_t *config);

@@ -5,9 +5,40 @@
 #include "monte_carlo.h"
 #include "../../src/quantum_rng/quantum_rng.h"
 
+/*
+ * Draw a standard normal variate N(0,1) from the quantum RNG using the
+ * Box-Muller transform.  Two uniforms produce two independent normals;
+ * the second one is cached so consecutive calls consume one uniform each
+ * on average.  The cache lives at the call site so it is always tied to
+ * a single qrng context.
+ */
+static double generate_normal(qrng_ctx *ctx, double *cache, int *has_cache) {
+    if (*has_cache) {
+        *has_cache = 0;
+        return *cache;
+    }
+
+    double u1;
+    do {
+        u1 = qrng_double(ctx);      /* qrng_double is in [0,1); reject 0 for log() */
+    } while (u1 <= 0.0);
+    double u2 = qrng_double(ctx);
+
+    double r = sqrt(-2.0 * log(u1));
+    *cache = r * sin(2.0 * M_PI * u2);
+    *has_cache = 1;
+    return r * cos(2.0 * M_PI * u2);
+}
+
+/* Convert a confidence z-score (e.g. 1.96) to its nominal two-sided
+ * confidence level in percent (e.g. 95.0): level = erf(z / sqrt(2)). */
+static double confidence_level_percent(double z_score) {
+    return 100.0 * erf(z_score / M_SQRT2);
+}
+
 void init_simulation_config(simulation_config_t *config) {
     if (!config) return;
-    
+
     config->num_simulations = DEFAULT_NUM_SIMULATIONS;
     config->trading_days = DEFAULT_TRADING_DAYS;
     config->asset.initial_price = DEFAULT_INITIAL_PRICE;
@@ -18,6 +49,7 @@ void init_simulation_config(simulation_config_t *config) {
     config->show_progress = 1;
     config->seed_length = 0;
     config->confidence_level = CONFIDENCE_95;
+    memset(config->seed, 0, sizeof(config->seed));
     memset(config->output_file, 0, sizeof(config->output_file));
 }
 
@@ -54,16 +86,24 @@ simulation_results_t run_simulation(const simulation_config_t *config) {
     simulation_results_t results = {0};
     
     // Validate parameters
-    if (!config || config->num_simulations < MIN_SIMULATIONS || 
-        config->num_simulations > MAX_SIMULATIONS) {
+    if (!config ||
+        config->num_simulations < MIN_SIMULATIONS ||
+        config->num_simulations > MAX_SIMULATIONS ||
+        config->trading_days < 1 ||
+        config->asset.initial_price <= 0.0 ||
+        config->asset.volatility < 0.0 ||
+        config->confidence_level <= 0.0) {
         results.prices = NULL;
         return results;
     }
-    
-    // Initialize QRNG
+
+    // Initialize QRNG.  Pass NULL when no seed was provided: qrng_init
+    // indexes the seed with (i % seed_len) whenever the pointer is
+    // non-NULL, so a non-NULL pointer with seed_len == 0 would crash
+    // with a division by zero.
     qrng_ctx *ctx;
-    qrng_error err = qrng_init(&ctx, 
-                              (uint8_t*)config->seed, 
+    qrng_error err = qrng_init(&ctx,
+                              config->seed_length > 0 ? (uint8_t*)config->seed : NULL,
                               config->seed_length);
     if (err != QRNG_SUCCESS) {
         results.prices = NULL;
@@ -88,35 +128,43 @@ simulation_results_t run_simulation(const simulation_config_t *config) {
     double sum_squared = 0.0;
     results.min_price = INFINITY;
     results.max_price = -INFINITY;
-    
+
+    double normal_cache = 0.0;
+    int has_normal_cache = 0;
+    int progress_step = config->num_simulations / 100;
+    if (progress_step < 1) progress_step = 1;
+
     for (int i = 0; i < config->num_simulations; i++) {
         double price = config->asset.initial_price;
-        
+
         for (int t = 0; t < config->trading_days; t++) {
-            double z = qrng_double(ctx);
+            // Geometric Brownian motion requires a standard normal
+            // variate; a raw uniform would bias the drift upward.
+            double z = generate_normal(ctx, &normal_cache, &has_normal_cache);
             price *= exp(drift + vol * z);
         }
-        
+
         results.prices[i] = price;
         sum += price;
         sum_squared += price * price;
-        
+
         if (price < results.min_price) results.min_price = price;
         if (price > results.max_price) results.max_price = price;
-        
-        if (config->show_progress && i % (config->num_simulations / 100) == 0) {
+
+        if (config->show_progress && i % progress_step == 0) {
             fprintf(stderr, "\rProgress: %d%%", i * 100 / config->num_simulations);
         }
     }
-    
+
     if (config->show_progress) {
         fprintf(stderr, "\rProgress: 100%%\n");
     }
-    
+
     // Calculate statistics
     results.mean_price = sum / config->num_simulations;
-    results.std_dev = sqrt((sum_squared / config->num_simulations) - 
-                          (results.mean_price * results.mean_price));
+    double variance = (sum_squared / config->num_simulations) -
+                      (results.mean_price * results.mean_price);
+    results.std_dev = sqrt(fmax(variance, 0.0));
     
     double z_score = config->confidence_level;
     double margin = z_score * results.std_dev / sqrt(config->num_simulations);
@@ -134,8 +182,10 @@ void print_results(FILE *output, const simulation_results_t *results,
     fprintf(output, "Standard Deviation: %.2f\n", results->std_dev);
     fprintf(output, "Min Price: %.2f\n", results->min_price);
     fprintf(output, "Max Price: %.2f\n", results->max_price);
+    // config->confidence_level stores the z-score (1.96, 2.576, ...);
+    // convert it to the nominal confidence level for display.
     fprintf(output, "%.0f%% Confidence Interval: [%.2f, %.2f]\n",
-            config->confidence_level * 100,
+            confidence_level_percent(config->confidence_level),
             results->confidence_lower,
             results->confidence_upper);
 }
@@ -148,7 +198,8 @@ void output_results_json(FILE *output, const simulation_results_t *results,
     fprintf(output, "  \"min_price\": %.2f,\n", results->min_price);
     fprintf(output, "  \"max_price\": %.2f,\n", results->max_price);
     fprintf(output, "  \"confidence_interval\": {\n");
-    fprintf(output, "    \"level\": %.2f,\n", config->confidence_level);
+    fprintf(output, "    \"level_percent\": %.2f,\n", confidence_level_percent(config->confidence_level));
+    fprintf(output, "    \"z_score\": %.3f,\n", config->confidence_level);
     fprintf(output, "    \"lower\": %.2f,\n", results->confidence_lower);
     fprintf(output, "    \"upper\": %.2f\n", results->confidence_upper);
     fprintf(output, "  },\n");
@@ -170,7 +221,8 @@ void output_results_csv(FILE *output, const simulation_results_t *results,
     fprintf(output, "Standard Deviation,%.2f\n", results->std_dev);
     fprintf(output, "Min Price,%.2f\n", results->min_price);
     fprintf(output, "Max Price,%.2f\n", results->max_price);
-    fprintf(output, "Confidence Level,%.2f\n", config->confidence_level);
+    fprintf(output, "Confidence Level (%%),%.2f\n", confidence_level_percent(config->confidence_level));
+    fprintf(output, "Confidence Z-Score,%.3f\n", config->confidence_level);
     fprintf(output, "Confidence Lower,%.2f\n", results->confidence_lower);
     fprintf(output, "Confidence Upper,%.2f\n", results->confidence_upper);
     

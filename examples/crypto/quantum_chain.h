@@ -7,6 +7,7 @@
 
 #define HASH_SIZE 64
 #define MAX_DATA_SIZE 1024
+#define MAX_CHAIN_IMPORT_BLOCKS (1u << 20)  // sanity cap for untrusted files
 
 // Structure for a block in the quantum chain
 typedef struct QuantumBlock {

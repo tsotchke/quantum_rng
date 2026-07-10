@@ -8,12 +8,22 @@
 
 /**
  * @file quantum_rng.h
- * @brief Quantum-inspired random number generator
+ * @brief Quantum-mixing random number generator core
  *
- * This library implements a high-performance random number generator that leverages
- * quantum computing principles on classical hardware. It uses quantum circuit simulation,
- * floating-point uncertainty, and quantum entanglement to achieve high-quality
- * non-deterministic random numbers.
+ * A high-performance random number generator that mixes state through
+ * quantum-circuit-inspired transformations on classical hardware. It is the
+ * low-level core beneath the secure_rng layer.
+ *
+ * Determinism contract:
+ *  - qrng_init with a seed (seed != NULL, seed_len >= 1): output is a pure,
+ *    reproducible function of the seed. The same seed always produces the same
+ *    stream. No wall-clock/PID/cycle-counter entropy is mixed in.
+ *  - qrng_init unseeded (seed == NULL): the state is seeded from system entropy
+ *    at initialization, producing a non-deterministic stream.
+ *
+ * For genuine quantum-state-vector simulation and CHSH Bell verification see
+ * quantum_state.h / bell_test.h; for the production CSPRNG (hardware entropy,
+ * NIST SP 800-90B health tests, reseeding) see secure_rng.h.
  */
 
 /**
@@ -59,6 +69,7 @@ typedef struct qrng_ctx_t {
     uint64_t unique_id;
     uint64_t system_entropy;
     uint64_t runtime_entropy;
+    int seeded;                /**< 1 if initialized from a caller-provided seed (deterministic stream) */
 } qrng_ctx;
 
 /**

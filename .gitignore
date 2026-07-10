@@ -26,7 +26,6 @@
 *.swp
 *.swo
 *~
-.history
 
 # OS generated files
 .DS_Store
@@ -51,3 +50,52 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Runtime outputs
+*.csv
+
+# Loose built binaries (extensionless) land at repo root and tests/
+/quantum_rng_cli
+/qrng_v2
+/qrng_v3_test
+/secure_rng_test
+/thread_safety_test
+/health_tests_test
+
+# Built example/test/CLI binaries (extensionless, land at repo root)
+/bell_certified_lottery
+/fuzz_test
+/grover_hash_collision
+/grover_large_scale_demo
+/grover_large_scale_optimized
+/grover_parallel_benchmark
+/grover_password_crack
+/key_derivation_test
+/key_verification
+/loot_system
+/molecular_dynamics
+/monte_carlo
+/neural_init
+/particle_system
+/password_gen
+/phase3_phase4_benchmark
+/post_quantum_crypto
+/procedural_worlds
+/quantum_advantage_demo
+/quantum_attack_classical
+/quantum_evolution
+/quantum_gan
+/quantum_money
+/quantum_noise
+/quantum_portfolio
+/quantum_routing
+/quantum_showcase
+/quantum_slots
+/quantum_transformer
+/quantum_vs_classical
+/quantum_walk
+/secure_rng_demo
+/secure_token
+/terrain_generation
+/traffic_sim
+/weather_sim

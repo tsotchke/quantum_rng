@@ -25,14 +25,17 @@ void free_kdf_result(kdf_result_t *result) {
     if (!result) return;
     
     if (result->derived_key) {
-        // Securely wipe the key before freeing
-        memset(result->derived_key, 0, result->memory_used);
+        // Securely wipe the key before freeing.
+        // NOTE: wipe exactly key_size bytes — the previous code wiped
+        // result->memory_used bytes, overflowing the heap allocation.
+        memset(result->derived_key, 0, result->key_size);
         free(result->derived_key);
         result->derived_key = NULL;
     }
-    
+
     // Clear other fields
     memset(result->salt, 0, SALT_SIZE);
+    result->key_size = 0;
     result->entropy_estimate = 0;
     result->memory_used = 0;
     result->time_taken = 0;

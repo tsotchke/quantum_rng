@@ -1,23 +1,36 @@
+/**
+ * @file key_exchange.c
+ * @brief Educational key exchange DEMO.
+ *
+ * HONESTY NOTE: this is a toy protocol for demonstrating the *structure* of
+ * a key exchange (key material generation, transcript hashing, session key
+ * derivation). The "shared secret" is the XOR of the two public values, so
+ * a passive eavesdropper who sees both public keys can compute it. It is
+ * NOT a secure key exchange — real systems use (EC)DH or a KEM. Hashing is
+ * real SHA-256; randomness comes from the quantum RNG.
+ */
+
 #include "key_exchange.h"
+#include "sha256.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
-#define MIXING_ROUNDS 3
 #define ENTROPY_POOL_SIZE 4096
 
 static uint8_t entropy_pool[ENTROPY_POOL_SIZE];
 static size_t pool_position = 0;
+static int pool_initialized = 0;
 
 static void init_entropy_pool(qrng_ctx *ctx);
 static void get_entropy_bytes(qrng_ctx *ctx, uint8_t *buffer, size_t len);
-static void enhanced_sha256(const uint8_t *data, size_t len, uint8_t hash[HASH_SIZE]);
 
 void init_exchange_config(exchange_config_t *config) {
     config->role = ROLE_INITIATOR;
     strncpy(config->seed, "key_exchange", sizeof(config->seed) - 1);
-    config->seed_length = 11;
+    config->seed[sizeof(config->seed) - 1] = '\0';
+    config->seed_length = (int)strlen(config->seed);
     config->output_mode = OUTPUT_NORMAL;
     config->show_progress = 1;
     config->output_file[0] = '\0';
@@ -60,12 +73,15 @@ static void init_entropy_pool(qrng_ctx *ctx) {
         fprintf(stderr, "Warning: Could not achieve desired entropy pool quality\n");
         memcpy(entropy_pool, temp_pool, ENTROPY_POOL_SIZE);
     }
-    
+
     pool_position = 0;
+    pool_initialized = 1;
 }
 
 static void get_entropy_bytes(qrng_ctx *ctx, uint8_t *buffer, size_t len) {
-    if (pool_position >= ENTROPY_POOL_SIZE) {
+    // BUG FIX: the pool was previously consumed before ever being filled,
+    // silently handing out all-zero "entropy" on first use.
+    if (!pool_initialized || pool_position >= ENTROPY_POOL_SIZE) {
         init_entropy_pool(ctx);
     }
     
@@ -84,42 +100,12 @@ static void get_entropy_bytes(qrng_ctx *ctx, uint8_t *buffer, size_t len) {
     }
 }
 
-static void enhanced_sha256(const uint8_t *data, size_t len, uint8_t hash[HASH_SIZE]) {
-    qrng_ctx *ctx;
-    if (qrng_init(&ctx, data, len) != 0) {
-        fprintf(stderr, "Error: Failed to initialize quantum RNG\n");
-        exit(1);
-    }
-    
-    uint8_t temp_hash[HASH_SIZE];
-    if (qrng_bytes(ctx, temp_hash, HASH_SIZE) != 0) {
-        fprintf(stderr, "Error: Failed to get quantum random bytes\n");
-        exit(1);
-    }
-    
-    for (int round = 0; round < MIXING_ROUNDS; round++) {
-        uint8_t round_data[HASH_SIZE * 2];
-        if (qrng_bytes(ctx, round_data, HASH_SIZE) != 0) {
-            fprintf(stderr, "Error: Failed to get quantum random bytes\n");
-            exit(1);
-        }
-        
-        for (int i = 0; i < HASH_SIZE; i++) {
-            round_data[HASH_SIZE + i] = temp_hash[i] ^ round_data[i];
-        }
-        
-        uint8_t entropy_mix[HASH_SIZE];
-        get_entropy_bytes(ctx, entropy_mix, HASH_SIZE);
-        
-        for (int i = 0; i < HASH_SIZE; i++) {
-            temp_hash[i] = round_data[i] ^ round_data[HASH_SIZE + i] ^ entropy_mix[i];
-            temp_hash[i] = (temp_hash[i] << 3) | (temp_hash[i] >> 5);
-        }
-    }
-    
-    memcpy(hash, temp_hash, HASH_SIZE);
-    qrng_free(ctx);
-}
+/*
+ * BUG FIX: the previous "enhanced_sha256" was not a hash at all — it drew
+ * random bytes from a qrng seeded with the input plus a mutable global
+ * entropy pool, so its output was not even a deterministic function of the
+ * input. It is replaced by real SHA-256 (see sha256.h).
+ */
 
 void generate_key_material(qrng_ctx *ctx, key_material_t *keys) {
     uint8_t temp[KEY_SIZE * 4];
@@ -156,6 +142,13 @@ void generate_key_material(qrng_ctx *ctx, key_material_t *keys) {
         memcpy(keys->private_key, mixed, KEY_SIZE);
     }
     
+    // Mix in bytes from the conditioned entropy pool as a final pass
+    uint8_t pool_bytes[KEY_SIZE];
+    get_entropy_bytes(ctx, pool_bytes, KEY_SIZE);
+    for (int i = 0; i < KEY_SIZE; i++) {
+        keys->private_key[i] ^= pool_bytes[i];
+    }
+
     // Verify entropy before proceeding
     key_entropy = estimate_entropy(keys->private_key, KEY_SIZE);
     if (key_entropy < MIN_ENTROPY) {
@@ -164,7 +157,7 @@ void generate_key_material(qrng_ctx *ctx, key_material_t *keys) {
             fprintf(stderr, "Error: Failed to get quantum random bytes\n");
             exit(1);
         }
-        
+
         for (int i = 0; i < KEY_SIZE; i++) {
             uint8_t mix = 0;
             for (int j = 0; j < 4; j++) {
@@ -175,9 +168,10 @@ void generate_key_material(qrng_ctx *ctx, key_material_t *keys) {
                                  ((keys->private_key[i] << 3) | (keys->private_key[i] >> 5));
         }
     }
-    
-    // Generate public key
-    enhanced_sha256(keys->private_key, KEY_SIZE, keys->public_key);
+
+    // Public key is a real SHA-256 commitment to the private key.
+    // (Toy construction: it demonstrates a one-way public value, not DH.)
+    sha256(keys->private_key, KEY_SIZE, keys->public_key);
     
     // Generate nonce
     if (qrng_bytes(ctx, keys->nonce, NONCE_SIZE) != 0) {
@@ -187,34 +181,31 @@ void generate_key_material(qrng_ctx *ctx, key_material_t *keys) {
 }
 
 void derive_session_key(key_material_t *keys, const uint8_t *transcript, size_t transcript_len) {
-    // XOR with transcript bytes
-    for (int i = 0; i < KEY_SIZE; i++) {
-        keys->session_key[i] = transcript[i % transcript_len];
+    // session_key = SHA-256(label || shared_secret || transcript)
+    // BUG FIX: the previous version copied transcript bytes verbatim
+    // (transcript[i % transcript_len], dividing by zero for an empty
+    // transcript) and XORed the shared secret — leaking both inputs.
+    static const char label[] = "QKX-session-v1";
+    sha256_ctx_t ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, label, sizeof(label) - 1);
+    sha256_update(&ctx, keys->shared_secret, KEY_SIZE);
+    if (transcript && transcript_len > 0) {
+        sha256_update(&ctx, transcript, transcript_len);
     }
-    
-    // XOR with shared secret
-    for (int i = 0; i < KEY_SIZE; i++) {
-        keys->session_key[i] ^= keys->shared_secret[i];
-    }
+    sha256_final(&ctx, keys->session_key);
 }
 
 void update_transcript_hash(uint8_t *hash, const void *data, size_t len) {
-    uint8_t new_hash[HASH_SIZE];
-    uint8_t *temp = malloc(HASH_SIZE + len);
-    memcpy(temp, hash, HASH_SIZE);
-    memcpy(temp + HASH_SIZE, data, len);
-    
-    // Simple mixing function
-    for (int i = 0; i < HASH_SIZE; i++) {
-        new_hash[i] = 0;
-        for (size_t j = 0; j < HASH_SIZE + len; j++) {
-            new_hash[i] ^= temp[j];
-            new_hash[i] = (new_hash[i] << 1) | (new_hash[i] >> 7);
-        }
-    }
-    
-    memcpy(hash, new_hash, HASH_SIZE);
-    free(temp);
+    // hash = SHA-256(hash || data)
+    // BUG FIX: the previous "mixing function" produced the same value for
+    // every output byte (it had no positional dependence), so the whole
+    // transcript hash was a single repeated byte.
+    sha256_ctx_t ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, hash, HASH_SIZE);
+    sha256_update(&ctx, data, len);
+    sha256_final(&ctx, hash);
 }
 
 double estimate_entropy(const uint8_t *data, size_t len) {
@@ -268,7 +259,10 @@ void simulate_network_exchange(exchange_state_t *initiator, exchange_state_t *re
     generate_key_material(ctx, &initiator->keys);
     generate_key_material(ctx, &responder->keys);
     
-    // Compute shared secret (same for both parties)
+    // Compute shared secret (same for both parties).
+    // TOY CONSTRUCTION: XOR of the two public values is trivially computable
+    // by an eavesdropper — this stands in for a real (EC)DH exchange purely
+    // to demonstrate the surrounding protocol structure.
     uint8_t shared_secret[KEY_SIZE];
     for (int i = 0; i < KEY_SIZE; i++) {
         shared_secret[i] = initiator->keys.public_key[i] ^ responder->keys.public_key[i];
@@ -394,7 +388,7 @@ void run_interactive_mode(const exchange_config_t *config) {
     
     while (1) {
         printf("\nPress Enter to perform key exchange (or 'q' to quit): ");
-        fgets(input, sizeof(input), stdin);
+        if (!fgets(input, sizeof(input), stdin)) break;  // EOF or read error
         if (input[0] == 'q' || input[0] == 'Q') break;
         
         state = run_key_exchange(config);

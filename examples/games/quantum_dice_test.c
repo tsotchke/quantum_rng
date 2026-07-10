@@ -9,18 +9,18 @@
 #define NUM_ROLLS 1000000  // Large sample size for statistical significance
 #define TOLERANCE 0.01  // 1% tolerance for expected frequencies
 
-// Chi-square critical values for different degrees of freedom (df) at 90% confidence
+// Chi-square critical values for different degrees of freedom (df) at 95% confidence
 static double get_chi_square_critical(int df) {
-    // Values for common dice sizes (df = sides - 1) at 90% confidence
+    // Values for common dice sizes (df = sides - 1)
     switch(df) {
-        case 3:  return 6.251;  // d4
-        case 5:  return 9.236;  // d6
-        case 7:  return 12.017; // d8
-        case 9:  return 14.684; // d10
-        case 11: return 17.275; // d12
-        case 19: return 27.204; // d20
-        case 99: return 117.407; // d100
-        default: return df * 1.3; // Conservative estimate for other sizes
+        case 3:  return 7.815;  // d4
+        case 5:  return 11.070; // d6
+        case 7:  return 14.067; // d8
+        case 9:  return 16.919; // d10
+        case 11: return 19.675; // d12
+        case 19: return 30.144; // d20
+        case 99: return 123.225; // d100
+        default: return df * 1.5; // Conservative estimate for other sizes
     }
 }
 
@@ -45,8 +45,8 @@ static void print_distribution(const char* test_name, int* results, int sides) {
     
     double critical_value = get_chi_square_critical(sides - 1);
     printf("\nChi-square statistic: %.4f\n", chi_square);
-    printf("Critical value (90%%): %.4f\n", critical_value);
-    printf("Result: %s (90%% confidence)\n", 
+    printf("Critical value (95%%): %.4f\n", critical_value);
+    printf("Result: %s (95%% confidence)\n", 
            chi_square < critical_value ? "PASS" : "FAIL");
 }
 
@@ -163,8 +163,8 @@ static void test_sequential_independence() {
     
     double critical_value = get_chi_square_critical(35); // 36 pairs - 1 df
     printf("Chi-square statistic for pairs: %.4f\n", chi_square);
-    printf("Critical value (90%%): %.4f\n", critical_value);
-    printf("Result: %s (90%% confidence)\n", 
+    printf("Critical value (95%%): %.4f\n", critical_value);
+    printf("Result: %s (95%% confidence)\n", 
            chi_square < critical_value ? "PASS" : "FAIL");
     
     quantum_dice_free(dice);

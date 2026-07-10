@@ -1,0 +1,204 @@
+# Makefile for Quantum RNG v2.0 with Advanced Quantum Simulation
+# 
+# This builds the production-quality quantum circuit simulator with:
+# - Full state vector simulation (up to 16 qubits)
+# - Universal quantum gate set
+# - Bell inequality testing
+# - Production matrix mathematics
+
+CC = gcc
+CFLAGS = -Wall -Wextra -O3 -march=native -std=c11
+CFLAGS += -ffast-math -funroll-loops
+CFLAGS += -I./src
+
+# Link with math library
+LDFLAGS = -lm
+
+# Directories
+SRC_DIR = src/quantum_rng
+ENTROPY_DIR = src/entropy
+TEST_DIR = tests
+BUILD_DIR = build
+
+# Source files
+QUANTUM_SRCS = $(SRC_DIR)/quantum_state.c \
+               $(SRC_DIR)/quantum_gates.c \
+               $(SRC_DIR)/matrix_math.c \
+               $(SRC_DIR)/bell_test.c \
+               $(SRC_DIR)/simd_ops.c \
+               $(ENTROPY_DIR)/hardware_entropy.c
+
+# Object files
+QUANTUM_OBJS = $(BUILD_DIR)/quantum_state.o \
+               $(BUILD_DIR)/quantum_gates.o \
+               $(BUILD_DIR)/matrix_math.o \
+               $(BUILD_DIR)/bell_test.o \
+               $(BUILD_DIR)/simd_ops.o \
+               $(BUILD_DIR)/hardware_entropy.o
+
+# Test executables
+TESTS = $(BUILD_DIR)/bell_test_demo \
+        $(BUILD_DIR)/gate_test \
+        $(BUILD_DIR)/correlation_test
+
+# Default target
+all: directories $(TESTS)
+	@echo "╔═══════════════════════════════════════════════════════════╗"
+	@echo "║  Quantum RNG v2.0 - Build Complete                        ║"
+	@echo "╠═══════════════════════════════════════════════════════════╣"
+	@echo "║                                                           ║"
+	@echo "║  Built executables:                                       ║"
+	@echo "║    • $(BUILD_DIR)/bell_test_demo                          ║"
+	@echo "║                                                           ║"
+	@echo "║  To run Bell test:                                        ║"
+	@echo "║    ./$(BUILD_DIR)/bell_test_demo [num_measurements]       ║"
+	@echo "║                                                           ║"
+	@echo "║  Example:                                                 ║"
+	@echo "║    ./$(BUILD_DIR)/bell_test_demo 10000                    ║"
+	@echo "║                                                           ║"
+	@echo "╚═══════════════════════════════════════════════════════════╝"
+
+# Create build directory
+directories:
+	@mkdir -p $(BUILD_DIR)
+
+# Compile quantum state management
+$(BUILD_DIR)/quantum_state.o: $(SRC_DIR)/quantum_state.c $(SRC_DIR)/quantum_state.h $(SRC_DIR)/matrix_math.h
+	@echo "Compiling quantum state vector engine..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile quantum gates
+$(BUILD_DIR)/quantum_gates.o: $(SRC_DIR)/quantum_gates.c $(SRC_DIR)/quantum_gates.h $(SRC_DIR)/quantum_state.h
+	@echo "Compiling universal quantum gate set..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile matrix mathematics
+$(BUILD_DIR)/matrix_math.o: $(SRC_DIR)/matrix_math.c $(SRC_DIR)/matrix_math.h
+	@echo "Compiling matrix mathematics library..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile Bell test
+$(BUILD_DIR)/bell_test.o: $(SRC_DIR)/bell_test.c $(SRC_DIR)/bell_test.h $(SRC_DIR)/quantum_gates.h
+	@echo "Compiling Bell inequality test framework..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile hardware entropy
+$(BUILD_DIR)/hardware_entropy.o: $(ENTROPY_DIR)/hardware_entropy.c $(ENTROPY_DIR)/hardware_entropy.h
+	@echo "Compiling hardware entropy sources..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile SIMD operations
+$(BUILD_DIR)/simd_ops.o: $(SRC_DIR)/simd_ops.c $(SRC_DIR)/simd_ops.h
+	@echo "Compiling SIMD vectorized operations..."
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Build gate test
+$(BUILD_DIR)/gate_test: $(TEST_DIR)/gate_test.c $(QUANTUM_OBJS)
+	@echo "Building gate verification program..."
+	$(CC) $(CFLAGS) $< $(QUANTUM_OBJS) -o $@ $(LDFLAGS)
+
+# Build correlation test
+$(BUILD_DIR)/correlation_test: $(TEST_DIR)/correlation_test.c $(QUANTUM_OBJS)
+	@echo "Building correlation test program..."
+	$(CC) $(CFLAGS) $< $(QUANTUM_OBJS) -o $@ $(LDFLAGS)
+
+# Build Bell test demo
+$(BUILD_DIR)/bell_test_demo: $(TEST_DIR)/bell_test_demo.c $(QUANTUM_OBJS)
+	@echo "Building Bell test demonstration program..."
+	$(CC) $(CFLAGS) $< $(QUANTUM_OBJS) -o $@ $(LDFLAGS)
+
+# Run gate verification first
+test-gates: $(BUILD_DIR)/gate_test
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Running Gate Verification Tests"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	./$(BUILD_DIR)/gate_test
+
+# Run Bell test
+test: $(BUILD_DIR)/bell_test_demo
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Running Bell Inequality Test (CHSH)"
+	@echo "This will prove quantum behavior of the RNG"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	./$(BUILD_DIR)/bell_test_demo 5000
+
+# Run with more measurements (slower but more accurate)
+test-full: $(BUILD_DIR)/bell_test_demo
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Running Full Bell Test (20000 measurements)"
+	@echo "This may take a few minutes..."
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	./$(BUILD_DIR)/bell_test_demo 20000
+
+# Quick test (fast)
+test-quick: $(BUILD_DIR)/bell_test_demo
+	@echo ""
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo "Running Quick Bell Test (1000 measurements)"
+	@echo "═══════════════════════════════════════════════════════════"
+	@echo ""
+	./$(BUILD_DIR)/bell_test_demo 1000
+
+# Clean build artifacts
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -rf $(BUILD_DIR)
+
+# Rebuild everything
+rebuild: clean all
+
+# Show build information
+info:
+	@echo "╔═══════════════════════════════════════════════════════════╗"
+	@echo "║  Quantum RNG v2.0 - Build Information                     ║"
+	@echo "╠═══════════════════════════════════════════════════════════╣"
+	@echo "║                                                           ║"
+	@echo "║  Compiler:     $(CC)                                      ║"
+	@echo "║  C Standard:   C11                                        ║"
+	@echo "║  Optimization: -O3 -march=native                          ║"
+	@echo "║                                                           ║"
+	@echo "║  Components:                                              ║"
+	@echo "║    • Quantum State Vector Engine                          ║"
+	@echo "║    • Universal Quantum Gate Set (30+ gates)               ║"
+	@echo "║    • Production Matrix Mathematics                        ║"
+	@echo "║    • Bell Inequality Testing (CHSH)                       ║"
+	@echo "║                                                           ║"
+	@echo "║  Capabilities:                                            ║"
+	@echo "║    • 1-16 qubit simulation                                ║"
+	@echo "║    • Eigenvalue decomposition                             ║"
+	@echo "║    • Entanglement measurement                             ║"
+	@echo "║    • Quantum behavior verification                        ║"
+	@echo "║                                                           ║"
+	@echo "╚═══════════════════════════════════════════════════════════╝"
+
+# Development build with debug symbols
+debug: CFLAGS = -Wall -Wextra -g -O0 -std=c11 -I./src
+debug: directories $(TESTS)
+	@echo "Debug build complete (with symbols, no optimization)"
+
+# Help target
+help:
+	@echo "Quantum RNG v2.0 Makefile"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make              - Build all components"
+	@echo "  make test         - Run Bell test (5000 measurements)"
+	@echo "  make test-quick   - Quick test (1000 measurements)"
+	@echo "  make test-full    - Full test (20000 measurements)"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make rebuild      - Clean and rebuild"
+	@echo "  make debug        - Build with debug symbols"
+	@echo "  make info         - Show build information"
+	@echo "  make help         - Show this help"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make && make test                    # Build and test"
+	@echo "  ./build/bell_test_demo 10000         # Custom measurement count"
+
+.PHONY: all directories test test-full test-quick clean rebuild info debug help

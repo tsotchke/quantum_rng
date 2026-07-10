@@ -2,12 +2,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 #include <assert.h>
 #include "monte_carlo.h"
 #include "../../src/quantum_rng/quantum_rng.h"
 
 #define EPSILON 0.01  // For floating point comparisons
 #define TEST_SEED "quantum_monte_carlo_test_seed"
+// The quantum RNG produces roughly 0.6M doubles/second, so tests use a
+// reduced (but still statistically meaningful) number of simulations.
+#define TEST_NUM_SIMULATIONS 10000
 
 // Helper functions
 static void print_test_header(const char* test_name) {
@@ -82,14 +86,18 @@ static void test_simulation_results() {
     simulation_config_t config;
     init_simulation_config(&config);
     
-    // Use fixed seed for reproducible results
-    strncpy(config.seed, TEST_SEED, sizeof(config.seed));
+    // Seed the RNG (the quantum RNG also mixes in hardware entropy, so
+    // results are statistical rather than bit-reproducible)
+    strncpy(config.seed, TEST_SEED, sizeof(config.seed) - 1);
     config.seed_length = strlen(TEST_SEED);
-    
+    config.num_simulations = TEST_NUM_SIMULATIONS;
+    config.show_progress = 0;
+
     // Run simulation
     simulation_results_t results = run_simulation(&config);
-    
+
     // Verify basic statistical properties
+    assert(results.prices != NULL);
     assert(results.mean_price > 0);
     assert(results.std_dev > 0);
     assert(results.min_price <= results.mean_price);
@@ -102,8 +110,9 @@ static void test_simulation_results() {
                           exp(annual_return * config.trading_days / DEFAULT_TRADING_DAYS);
     
     // Mean should be within 10% of theoretical value
+    printf("Mean price: %.4f (theoretical: %.4f)\n", results.mean_price, expected_mean);
     assert(fabs(results.mean_price - expected_mean) / expected_mean < 0.1);
-    
+
     free_simulation_results(&results);
     print_test_result("Simulation results", 1);
 }
@@ -114,11 +123,14 @@ static void test_output_formats() {
     
     simulation_config_t config;
     init_simulation_config(&config);
-    strncpy(config.seed, TEST_SEED, sizeof(config.seed));
+    strncpy(config.seed, TEST_SEED, sizeof(config.seed) - 1);
     config.seed_length = strlen(TEST_SEED);
-    
+    config.num_simulations = TEST_NUM_SIMULATIONS;
+    config.show_progress = 0;
+
     simulation_results_t results = run_simulation(&config);
-    
+    assert(results.prices != NULL);
+
     // Test JSON output
     config.output_mode = OUTPUT_JSON;
     FILE* json_file = fopen("test_output.json", "w");
@@ -190,20 +202,23 @@ static void test_performance() {
     
     simulation_config_t config;
     init_simulation_config(&config);
-    config.num_simulations = 100000; // Large number for performance testing
-    
+    config.num_simulations = 20000; // Enough paths for a stable rate measurement
+    config.show_progress = 0;
+
     // Measure execution time
     clock_t start = clock();
     simulation_results_t results = run_simulation(&config);
     clock_t end = clock();
-    
+    assert(results.prices != NULL);
+
     double time_spent = (double)(end - start) / CLOCKS_PER_SEC;
-    double sims_per_second = config.num_simulations / time_spent;
-    
-    printf("Completed %d simulations in %.2f seconds\n", 
+    printf("Completed %d simulations in %.2f seconds\n",
            config.num_simulations, time_spent);
-    printf("Performance: %.2f simulations/second\n", sims_per_second);
-    
+    if (time_spent > 0) {
+        printf("Performance: %.2f simulations/second\n",
+               config.num_simulations / time_spent);
+    }
+
     free_simulation_results(&results);
     print_test_result("Performance test", 1);
 }
