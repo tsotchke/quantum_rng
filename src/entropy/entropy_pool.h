@@ -71,6 +71,7 @@ typedef struct {
     
     // Thread safety
     pthread_mutex_t pool_mutex;    /**< Pool access mutex */
+    pthread_mutex_t health_mutex;  /**< Serializes health_ctx access across the worker + on-demand paths */
     pthread_cond_t refill_cond;    /**< Refill condition variable */
     pthread_t background_thread;   /**< Background generation thread */
     int background_running;        /**< Background thread running flag */

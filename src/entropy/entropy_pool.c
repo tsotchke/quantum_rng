@@ -54,10 +54,13 @@ static void* entropy_worker_thread(void *arg) {
             continue;
         }
         
-        // Run health tests on generated entropy
+        // Run health tests on generated entropy. The health context is shared
+        // with the on-demand generation path, so serialize access to it.
+        pthread_mutex_lock(&pool->health_mutex);
         health_error_t health_err = health_tests_run_batch(
             pool->health_ctx, chunk, sizeof(chunk));
-        
+        pthread_mutex_unlock(&pool->health_mutex);
+
         if (health_err != HEALTH_SUCCESS) {
             // Health test failed - discard this chunk
             secure_memzero(chunk, sizeof(chunk));
@@ -205,7 +208,20 @@ int entropy_pool_init_with_config(
         return -1;
     }
     
+    if (pthread_mutex_init(&ctx->health_mutex, NULL) != 0) {
+        pthread_mutex_destroy(&ctx->pool_mutex);
+        health_tests_free(ctx->health_ctx);
+        free(ctx->health_ctx);
+        entropy_free(ctx->entropy_ctx);
+        free(ctx->entropy_ctx);
+        secure_memzero(ctx->pool_buffer, ctx->pool_size);
+        free(ctx->pool_buffer);
+        free(ctx);
+        return -1;
+    }
+
     if (pthread_cond_init(&ctx->refill_cond, NULL) != 0) {
+        pthread_mutex_destroy(&ctx->health_mutex);
         pthread_mutex_destroy(&ctx->pool_mutex);
         health_tests_free(ctx->health_ctx);
         free(ctx->health_ctx);
@@ -221,7 +237,9 @@ int entropy_pool_init_with_config(
     uint8_t startup_entropy[4096];
     err = entropy_get_bytes(ctx->entropy_ctx, startup_entropy, sizeof(startup_entropy));
     if (err == ENTROPY_SUCCESS) {
+        pthread_mutex_lock(&ctx->health_mutex);
         health_err = health_tests_run_batch(ctx->health_ctx, startup_entropy, sizeof(startup_entropy));
+        pthread_mutex_unlock(&ctx->health_mutex);
         if (health_err == HEALTH_SUCCESS) {
             memcpy(ctx->pool_buffer, startup_entropy, sizeof(startup_entropy));
             ctx->pool_available = sizeof(startup_entropy);
@@ -233,6 +251,7 @@ int entropy_pool_init_with_config(
     if (config->enable_background_thread) {
         if (entropy_pool_start_background(ctx) != 0) {
             pthread_cond_destroy(&ctx->refill_cond);
+            pthread_mutex_destroy(&ctx->health_mutex);
             pthread_mutex_destroy(&ctx->pool_mutex);
             health_tests_free(ctx->health_ctx);
             free(ctx->health_ctx);
@@ -259,8 +278,9 @@ void entropy_pool_free(entropy_pool_ctx_t *ctx) {
     
     // Destroy synchronization primitives
     pthread_cond_destroy(&ctx->refill_cond);
+    pthread_mutex_destroy(&ctx->health_mutex);
     pthread_mutex_destroy(&ctx->pool_mutex);
-    
+
     // Free components
     if (ctx->health_ctx) {
         health_tests_free(ctx->health_ctx);
@@ -375,8 +395,11 @@ int entropy_pool_get_bytes(
         return -1;
     }
     
-    // Test generated entropy
+    // Test generated entropy. Serialize health_ctx access — the background
+    // worker thread runs the same tests on the shared context concurrently.
+    pthread_mutex_lock(&ctx->health_mutex);
     health_error_t health_err = health_tests_run_batch(ctx->health_ctx, buffer, size);
+    pthread_mutex_unlock(&ctx->health_mutex);
     if (health_err != HEALTH_SUCCESS) {
         secure_memzero(buffer, size);
         return -1;

@@ -204,8 +204,13 @@ health_error_t health_test_apt(health_test_ctx_t *ctx, uint8_t sample) {
         return HEALTH_SUCCESS;
     }
     
-    // Add sample to window
-    ctx->stats.apt_window_buffer[ctx->stats.apt_window_pos] = sample;
+    // Add sample to window. Bounds-guarded: apt_window_pos is always in
+    // [0, apt_window_size) under correct single-threaded use, but guarding the
+    // write makes an out-of-bounds store impossible even if a caller feeds this
+    // context from more than one thread.
+    if (ctx->stats.apt_window_pos < ctx->config.apt_window_size) {
+        ctx->stats.apt_window_buffer[ctx->stats.apt_window_pos] = sample;
+    }
     
     // Count occurrences of first sample
     if (sample == ctx->stats.apt_first_sample) {
