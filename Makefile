@@ -1,5 +1,13 @@
-# Compiler and flags
-CC = gcc
+# Compiler and flags.
+# On macOS use clang: the Accelerate framework and Apple SDK headers rely on
+# clang-only NEON vector types and language extensions and do not compile under
+# GNU GCC (where `gcc` may point to a Homebrew gcc, e.g. on CI runners). On
+# Linux/Windows use gcc. A command-line `make CC=...` still overrides this.
+ifeq ($(shell uname),Darwin)
+    CC = clang
+else
+    CC = gcc
+endif
 
 # AGGRESSIVE OPTIMIZATION (with numerical stability fixes)
 # -Ofast: Maximum optimization
