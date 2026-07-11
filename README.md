@@ -16,7 +16,7 @@ If you are new to this: randomness matters because the security of nearly everyt
 - **Hardware entropy.** The unpredictability that drives measurement is drawn from the operating system and CPU: RDSEED and RDRAND on x86, RNDR on ARM, `getrandom()`, `/dev/random`, `/dev/urandom`, and CPU timing jitter, arranged in an automatic fallback chain with per-source quality estimation (`src/entropy/`).
 - **NIST SP 800-90B health tests.** The Repetition Count Test and Adaptive Proportion Test run continuously on the entropy stream to detect a failing or degraded source (`src/health/`). All 26 health tests pass.
 - **A production secure generator.** A unified, thread-safe interface integrates every layer above, offering four operating modes (fast, quantum, hybrid, verified), automatic reseeding, and error callbacks (`src/secure_rng/`). All 23 integration tests pass.
-- **GPU acceleration.** Batched state-vector kernels for Apple Silicon via Metal (`src/quantum_rng/metal/`).
+- **GPU acceleration.** Batched state-vector kernels on both **Apple Metal** (`src/quantum_rng/metal/`) and **NVIDIA CUDA** (`src/quantum_rng/cuda/`) — Hadamard, oracle, Grover diffusion, Pauli gates, and batched Grover search. Verified on Apple Silicon, RTX 3090, and RTX 3050.
 
 ## Performance
 
@@ -39,6 +39,7 @@ cd quantum_rng
 make                 # core library and the v3 self-test
 make examples_all    # all 44 example programs, across 8 domains
 make metal           # Apple Metal GPU benchmarks (macOS)
+make cuda            # NVIDIA CUDA GPU benchmark (needs the CUDA toolkit)
 make verify_all      # everything: core test suites plus every example
 ```
 
