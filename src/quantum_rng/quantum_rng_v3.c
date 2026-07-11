@@ -214,6 +214,16 @@ static int extract_quantum_entropy(
             &ctx->entropy_ctx
         );
         ctx->stats.quantum_measurements += ctx->config.num_qubits;
+
+        // A basis-state index contains only num_qubits bits (8 by default).
+        // Condition it with an independent full-width entropy word before
+        // serializing it, so repeated Born outcomes do not become repeated
+        // 8-byte output patterns.
+        uint64_t conditioner;
+        if (quantum_entropy_get_uint64(&ctx->entropy_ctx, &conditioner) != 0) {
+            return -1;
+        }
+        measurement ^= conditioner;
         
         measurements_since_evolution++;
         
@@ -285,6 +295,14 @@ static int extract_grover_entropy(
             &ctx->entropy_ctx
         );
         ctx->stats.quantum_measurements += ctx->config.num_qubits;
+
+        // quantum_measure_all_fast returns a basis index, not 64 bits of
+        // entropy. Apply the same full-width conditioning as direct mode.
+        uint64_t conditioner;
+        if (quantum_entropy_get_uint64(&ctx->entropy_ctx, &conditioner) != 0) {
+            return -1;
+        }
+        measurement ^= conditioner;
         
         measurements_extracted++;
         
