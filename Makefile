@@ -152,7 +152,7 @@ QRNG_V3_TEST = qrng_v3_test
 GROVER_PARALLEL_BENCH = grover_parallel_benchmark
 
 # Phony targets
-.PHONY: all clean test test_examples test_health test_secure_rng test_thread_safety test_v3 showcase quantum_examples parallel_bench examples_all verify_all metal
+.PHONY: all clean test test_examples test_health test_secure_rng test_thread_safety test_v3 showcase quantum_examples parallel_bench examples_all verify_all metal cuda
 
 # Main targets
 all: $(LIB) $(SECURE_LIB) $(CLI) $(CLI_V2) $(QRNG_V3_TEST)
@@ -398,7 +398,24 @@ else
 	@echo "Metal benchmarks are macOS-only; skipping on $(shell uname)."
 endif
 
-# --- Aggregate: build every example (except Metal, which is opt-in) ---
+# --- CUDA GPU benchmark (opt-in; NVIDIA CUDA Toolkit required) ---
+# Not part of `all`/`verify_all`. No-ops cleanly when nvcc is absent, so it
+# never affects the CPU build on macOS/Linux/Windows. Override the GPU arch for
+# other cards, e.g. `make cuda CUDA_ARCH=sm_87` (Jetson Orin) or sm_72 (Xavier).
+NVCC ?= $(shell command -v nvcc 2>/dev/null)
+CUDA_ARCH ?= sm_86
+cuda:
+ifeq ($(NVCC),)
+	@echo "CUDA benchmark needs nvcc (NVIDIA CUDA Toolkit); none on PATH - skipping."
+else
+	@echo "Building CUDA GPU benchmark with $(NVCC) (arch=$(CUDA_ARCH))..."
+	$(NVCC) -O3 -arch=$(CUDA_ARCH) -Isrc -o cuda_gpu_benchmark \
+	    src/quantum_rng/cuda/cuda_bridge.cu \
+	    $(EXAMPLES_DIR)/quantum/cuda_gpu_benchmark.c -lm
+	@echo "CUDA GPU benchmark built. Run ./cuda_gpu_benchmark"
+endif
+
+# --- Aggregate: build every example (except Metal/CUDA, which are opt-in) ---
 ALL_EXAMPLE_BINS = $(KEY_EXCHANGE_TEST) $(QUANTUM_CHAIN_TEST) key_derivation_test key_verification \
                    $(QUANTUM_MONEY) $(MONTE_CARLO_TEST) $(OPTIONS_PRICING_TEST) $(OPTIONS_PRICING_DEMO) \
                    quantum_portfolio $(QUANTUM_DICE_TEST) $(QUANTUM_DICE_DEMO) $(BELL_LOTTERY) \
@@ -434,7 +451,7 @@ clean:
 	rm -f src/quantum_rng/grover_parallel.o examples/quantum/grover_parallel_benchmark.o
 	rm -f key_derivation_test key_verification quantum_portfolio
 	rm -f $(GAMES_SINGLE) $(ML_SINGLE) $(NETWORK_SINGLE) $(SCIENCE_SINGLE) $(QUANTUM_SINGLE)
-	rm -f secure_rng_demo fuzz_test $(METAL_BINS)
+	rm -f secure_rng_demo fuzz_test $(METAL_BINS) cuda_gpu_benchmark
 	rm -f options_pricing monte_carlo secure_token password_gen
 	find . -name "*.o" -delete
 
