@@ -39,8 +39,11 @@ jobs:
             runner: ubuntu-24.04-arm
           - name: macos-arm64
             runner: macos-14
+          # Intel macOS. The old macos-13 image was retired (Dec 2025); the
+          # supported Intel label is macos-15-intel (available through Aug 2027,
+          # the last x86_64 GitHub-hosted image).
           - name: macos-x64
-            runner: macos-13
+            runner: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
