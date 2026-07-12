@@ -22,7 +22,7 @@
  * Applies random quantum gates to create complex quantum evolution.
  * Uses hardware entropy to select gates (no circular dependency).
  */
-static qs_error_t evolve_quantum_state(
+qs_error_t evolve_quantum_state(
     quantum_state_t *state,
     quantum_entropy_ctx_t *entropy_ctx,
     size_t num_gates
@@ -92,7 +92,7 @@ static qs_error_t evolve_quantum_state(
  *
  * This gives 10-50x speedup while maintaining quantum properties!
  */
-static int extract_quantum_entropy(
+int extract_quantum_entropy(
     qrng_v3_ctx_t *ctx,
     uint8_t *buffer,
     size_t size
@@ -175,7 +175,7 @@ static int extract_quantum_entropy(
  *
  * This gives quantum enhancement WITHOUT the overhead of repeated searches.
  */
-static int extract_grover_entropy(
+int extract_grover_entropy(
     qrng_v3_ctx_t *ctx,
     uint8_t *buffer,
     size_t size

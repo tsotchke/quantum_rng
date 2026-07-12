@@ -2,6 +2,7 @@
 #include "quantum_entropy.h"
 #include "quantum_constants.h"
 #include "simd_ops.h"
+#include "quantum_bit_utils.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,18 +20,6 @@
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-
-static inline int check_qubit_valid(const quantum_state_t *state, int qubit) {
-    return (qubit >= 0 && qubit < (int)state->num_qubits);
-}
-
-static inline uint64_t flip_bit(uint64_t n, int bit_pos) {
-    return n ^ (1ULL << bit_pos);
-}
-
-static inline int get_bit(uint64_t n, int bit_pos) {
-    return (n >> bit_pos) & 1ULL;
-}
 
 // ============================================================================
 // SINGLE-QUBIT GATES
@@ -830,96 +819,7 @@ measurement_result_t quantum_measure(
     return result;
 }
 
-qs_error_t quantum_measure_multi(
-    quantum_state_t *state,
-    const int *qubits,
-    size_t num_qubits,
-    int *outcomes,
-    quantum_entropy_ctx_t *entropy
-) {
-    if (!state || !qubits || !outcomes) return QS_ERROR_INVALID_STATE;
-    if (!entropy) return QS_ERROR_INVALID_STATE;
-    
-    for (size_t i = 0; i < num_qubits; i++) {
-        measurement_result_t result = quantum_measure(state, qubits[i], MEASURE_COMPUTATIONAL, entropy);
-        outcomes[i] = result.outcome;
-    }
-    
-    return QS_SUCCESS;
-}
 
-double quantum_peek_probability(
-    const quantum_state_t *state,
-    int qubit,
-    int outcome
-) {
-    if (!state || !state->amplitudes || !check_qubit_valid(state, qubit)) {
-        return 0.0;
-    }
-    
-    double prob = 0.0;
-    for (uint64_t i = 0; i < state->state_dim; i++) {
-        if (get_bit(i, qubit) == outcome) {
-            double amp = cabs(state->amplitudes[i]);
-            prob += amp * amp;
-        }
-    }
-    
-    return prob;
-}
-
-/**
- * @brief PERFORMANCE-CRITICAL: Fast batch measurement of all qubits
- * 
- * Instead of measuring each qubit separately (8 scans of 256 elements = 2048 accesses),
- * sample the complete basis state in ONE pass (256 accesses).
- * 
- * This gives 8x speedup for measurement-heavy workloads!
- */
-uint64_t quantum_measure_all_fast(
-    quantum_state_t *state,
-    quantum_entropy_ctx_t *entropy
-) {
-    if (!state || !state->amplitudes || !entropy) {
-        return 0;
-    }
-    
-    // Get random number for sampling
-    double random;
-    if (quantum_entropy_get_double(entropy, &random) != 0) {
-        return 0;
-    }
-    
-    // Sample from probability distribution in ONE pass
-    double cumulative = 0.0;
-    for (uint64_t i = 0; i < state->state_dim; i++) {
-        const double mag = cabs(state->amplitudes[i]);
-        const double prob = mag * mag;
-        cumulative += prob;
-        
-        if (random < cumulative) {
-            // Collapse to this basis state
-            // Zero all other amplitudes
-            memset(state->amplitudes, 0, state->state_dim * sizeof(complex_t));
-            state->amplitudes[i] = 1.0;  // Collapsed state
-            
-            // Record measurement
-            quantum_state_record_measurement(state, i);
-            
-            return i;  // Return the measured basis state
-        }
-    }
-    
-    // Numerical precision fallback
-    uint64_t final_state = state->state_dim - 1;
-    memset(state->amplitudes, 0, state->state_dim * sizeof(complex_t));
-    state->amplitudes[final_state] = 1.0;
-    quantum_state_record_measurement(state, final_state);
-    
-    return final_state;
-}
-
-// ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
 
