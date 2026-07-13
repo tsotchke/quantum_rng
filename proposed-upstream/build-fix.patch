@@ -1,0 +1,10 @@
+--- a/src/quantum_rng/quantum_rng.h
++++ b/src/quantum_rng/quantum_rng.h
+@@ -3,7 +3,8 @@
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <unistd.h>
++#include <sys/types.h>   /* for pid_t (used by qrng_init unseeded path) */
+ #include <sys/time.h>
+ 
+ /**

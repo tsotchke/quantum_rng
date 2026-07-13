@@ -1,0 +1,16 @@
+--- a/README.md
++++ b/README.md
+@@ -1,5 +1,5 @@
+-A high-performance quantum-inspired random number generator that leverages quantum mechanical principles in classical computing environments. This library simulates quantum phenomena on classical hardware to generate high-quality random numbers with proven entropy characteristics.
++A high-performance random number generator that mixes state through quantum-circuit-inspired transformations on classical hardware. Under the hood it is a classical dual-mode PRNG; the "quantum" naming is analogy, not mechanism.
+@@ -9,11 +9,11 @@
+-- Quantum-inspired random number generation using simulated quantum effects:
++- Random number generation using quantum-circuit-inspired bit-mixing (splitmix64/xorshift style):
+@@ -12,7 +12,7 @@
+-- High entropy output (63.999872 bits/sample)
++- Reproducible output when seeded; non-deterministic when unseeded. Measured Shannon entropy of the generated stream is ~7.95 bits/byte (see audit/qrng_measure.c)
+@@ -24,7 +24,7 @@
+-- Verified non-deterministic output
++- Seeded mode is reproducible (same seed -> identical stream); unseeded mode draws gettimeofday/getpid and is non-deterministic. Not a CSPRNG.
+-- Competitive with leading classical RNGs while providing quantum properties
++- Competitive with leading classical RNGs
