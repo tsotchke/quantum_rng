@@ -34,30 +34,42 @@ extern "C" {
 
 #define STARTUP_ENTROPY_SIZE 2048
 #define RESEED_ENTROPY_SIZE 1024
-#define MIN_ENTROPY_FOR_RESEED 256
-#define DEFAULT_RESEED_INTERVAL (1024 * 1024)  /* 1MB */
-#define DEFAULT_HYBRID_THRESHOLD 1024           /* FAST < 1KB, QUANTUM >= 1KB */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Internal helpers are NOT part of the public shared-library ABI. Mark them
+ * hidden so they never appear in the dynamic export surface (a private header
+ * alone does not hide externally-linked symbols). Definitions in the .c files
+ * carry the same attribute. */
+#ifndef SECURE_RNG_INTERNAL
+#if defined(__GNUC__) || defined(__clang__)
+#define SECURE_RNG_INTERNAL __attribute__((visibility("hidden")))
+#else
+#define SECURE_RNG_INTERNAL
+#endif
+#endif
 
 /* Thread-safety lock helpers (defined in secure_init.c). */
-secure_rng_error_t lock_write(secure_rng_ctx_t *ctx);
-secure_rng_error_t lock_read(const secure_rng_ctx_t *ctx);
-secure_rng_error_t unlock(const secure_rng_ctx_t *ctx);
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_lock_write(secure_rng_ctx_t *ctx);
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_lock_read(const secure_rng_ctx_t *ctx);
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_unlock(const secure_rng_ctx_t *ctx);
 
 /* Error-callback dispatcher (defined in secure_init.c). */
-void invoke_error_callback(secure_rng_ctx_t *ctx,
+SECURE_RNG_INTERNAL void secure_rng_invoke_error_callback(secure_rng_ctx_t *ctx,
                            secure_rng_error_t error,
                            const char *message);
 
 /* Collect + health-test entropy (defined in secure_init.c). */
-secure_rng_error_t collect_tested_entropy(secure_rng_ctx_t *ctx,
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_collect_tested_entropy(secure_rng_ctx_t *ctx,
                                           uint8_t *buffer,
                                           size_t size);
 
 /* Whether auto-reseed is due (defined in secure_init.c). */
-int reseed_needed(const secure_rng_ctx_t *ctx);
+SECURE_RNG_INTERNAL int secure_rng_reseed_needed(const secure_rng_ctx_t *ctx);
 
 /* VERIFIED-mode CHSH Bell certification (defined in secure_init.c). */
-secure_rng_error_t run_bell_certification(secure_rng_ctx_t *ctx);
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_run_bell_certification(secure_rng_ctx_t *ctx);
 
 #ifdef __cplusplus
 }

@@ -36,16 +36,16 @@ qrng_v3_error_t qrng_v3_bytes(
             
             switch (ctx->config.mode) {
                 case QRNG_V3_MODE_DIRECT:
-                    err = extract_quantum_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
+                    err = qrng_v3_extract_quantum_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
                     break;
                     
                 case QRNG_V3_MODE_GROVER:
                     // Grover-based entropy extraction
-                    err = extract_grover_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
+                    err = qrng_v3_extract_grover_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
                     break;
                     
                 case QRNG_V3_MODE_BELL_VERIFIED:
-                    err = extract_quantum_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
+                    err = qrng_v3_extract_quantum_entropy(ctx, ctx->output_buffer, ctx->output_buffer_size);
                     break;
                     
                 default:

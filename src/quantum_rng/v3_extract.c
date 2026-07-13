@@ -1,8 +1,8 @@
 /*
  * v3_extract.c - quantum state evolution and entropy extraction (direct + grover)
  *
- * Contains the shared static helpers evolve_quantum_state / extract_quantum_entropy
- * / extract_grover_entropy, referenced by the generation and grover modules via
+ * Contains the shared static helpers qrng_v3_evolve_quantum_state / qrng_v3_extract_quantum_entropy
+ * / qrng_v3_extract_grover_entropy, referenced by the generation and grover modules via
  * v3_internal.h.
  */
 #include "quantum_rng_v3.h"
@@ -22,7 +22,7 @@
  * Applies random quantum gates to create complex quantum evolution.
  * Uses hardware entropy to select gates (no circular dependency).
  */
-qs_error_t evolve_quantum_state(
+V3_INTERNAL qs_error_t qrng_v3_evolve_quantum_state(
     quantum_state_t *state,
     quantum_entropy_ctx_t *entropy_ctx,
     size_t num_gates
@@ -92,7 +92,7 @@ qs_error_t evolve_quantum_state(
  *
  * This gives 10-50x speedup while maintaining quantum properties!
  */
-int extract_quantum_entropy(
+V3_INTERNAL int qrng_v3_extract_quantum_entropy(
     qrng_v3_ctx_t *ctx,
     uint8_t *buffer,
     size_t size
@@ -109,7 +109,7 @@ int extract_quantum_entropy(
     while (bytes_generated < size) {
         // Full evolution circuit periodically
         if (measurements_since_evolution >= measurements_per_full_evolution) {
-            evolve_quantum_state(
+            qrng_v3_evolve_quantum_state(
                 ctx->quantum_state,
                 &ctx->entropy_ctx,
                 ctx->config.num_qubits * 2  // 2 gates per qubit
@@ -175,7 +175,7 @@ int extract_quantum_entropy(
  *
  * This gives quantum enhancement WITHOUT the overhead of repeated searches.
  */
-int extract_grover_entropy(
+V3_INTERNAL int qrng_v3_extract_grover_entropy(
     qrng_v3_ctx_t *ctx,
     uint8_t *buffer,
     size_t size

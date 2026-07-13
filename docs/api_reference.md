@@ -575,7 +575,7 @@ double     qrng_double(qrng_ctx *ctx);                      // in [0, 1)
 int32_t    qrng_range32(qrng_ctx *ctx, int32_t min, int32_t max);   // [min, max]
 uint64_t   qrng_range64(qrng_ctx *ctx, uint64_t min, uint64_t max); // [min, max]
 
-double     qrng_get_entropy_estimate(qrng_ctx *ctx);        // entropy per bit
+double     qrng_get_entropy_estimate(qrng_ctx *ctx);        // Shannon entropy of output, bits per byte [0,8]
 qrng_error qrng_entangle_states(qrng_ctx *ctx, uint8_t *state1,
                                 uint8_t *state2, size_t len);
 qrng_error qrng_measure_state(qrng_ctx *ctx, uint8_t *state, size_t len);

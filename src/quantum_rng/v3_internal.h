@@ -18,23 +18,33 @@
 extern "C" {
 #endif
 
+/* Internal helpers are NOT part of the public shared-library ABI. Mark them
+ * hidden so they never appear in the dynamic export surface. */
+#ifndef V3_INTERNAL
+#if defined(__GNUC__) || defined(__clang__)
+#define V3_INTERNAL __attribute__((visibility("hidden")))
+#else
+#define V3_INTERNAL
+#endif
+#endif
+
 /* Entropy callback bridging the hardware pool (Layer 1) to quantum measurements
  * (Layer 2). Defined in v3_init.c. */
-int entropy_pool_callback(void *user_data, uint8_t *buffer, size_t size);
+V3_INTERNAL int qrng_v3_entropy_pool_callback(void *user_data, uint8_t *buffer, size_t size);
 
 /* Evolve a quantum state by applying `num_gates` random gates selected with
  * hardware entropy. Defined in v3_extract.c. */
-qs_error_t evolve_quantum_state(quantum_state_t *state,
+V3_INTERNAL qs_error_t qrng_v3_evolve_quantum_state(quantum_state_t *state,
                                 quantum_entropy_ctx_t *entropy_ctx,
                                 size_t num_gates);
 
 /* Direct-mode entropy extraction: evolve + batch-measure the quantum state,
  * conditioning each measurement with an independent entropy word. */
-int extract_quantum_entropy(qrng_v3_ctx_t *ctx, uint8_t *buffer, size_t size);
+V3_INTERNAL int qrng_v3_extract_quantum_entropy(qrng_v3_ctx_t *ctx, uint8_t *buffer, size_t size);
 
 /* Grover-mode entropy extraction: prepare a Grover-amplified distribution once
  * per batch, then measure many times. */
-int extract_grover_entropy(qrng_v3_ctx_t *ctx, uint8_t *buffer, size_t size);
+V3_INTERNAL int qrng_v3_extract_grover_entropy(qrng_v3_ctx_t *ctx, uint8_t *buffer, size_t size);
 
 #ifdef __cplusplus
 }

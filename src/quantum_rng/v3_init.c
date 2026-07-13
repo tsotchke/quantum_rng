@@ -24,7 +24,7 @@
  * Key: Uses entropy_pool (Layer 1) for quantum measurements (Layer 2).
  * No circular dependency because entropy_pool doesn't use quantum simulation.
  */
-int entropy_pool_callback(void *user_data, uint8_t *buffer, size_t size) {
+V3_INTERNAL int qrng_v3_entropy_pool_callback(void *user_data, uint8_t *buffer, size_t size) {
     entropy_pool_ctx_t *pool = (entropy_pool_ctx_t *)user_data;
     if (!pool) return -1;
     
@@ -90,7 +90,7 @@ qrng_v3_error_t qrng_v3_init_with_config(
     // Connect entropy pool to quantum measurements (resolves circular dependency!)
     quantum_entropy_init(
         &ctx->entropy_ctx,
-        entropy_pool_callback,
+        qrng_v3_entropy_pool_callback,
         ctx->entropy_pool
     );
     

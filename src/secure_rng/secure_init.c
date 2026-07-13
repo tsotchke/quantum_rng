@@ -8,7 +8,7 @@
 // THREAD SAFETY HELPERS
 // ============================================================================
 
-secure_rng_error_t lock_write(secure_rng_ctx_t *ctx) {
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_lock_write(secure_rng_ctx_t *ctx) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!ctx->thread_safe) return SECURE_RNG_SUCCESS;
     
@@ -18,7 +18,7 @@ secure_rng_error_t lock_write(secure_rng_ctx_t *ctx) {
     return SECURE_RNG_SUCCESS;
 }
 
-secure_rng_error_t lock_read(const secure_rng_ctx_t *ctx) {
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_lock_read(const secure_rng_ctx_t *ctx) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!ctx->thread_safe) return SECURE_RNG_SUCCESS;
     
@@ -29,7 +29,7 @@ secure_rng_error_t lock_read(const secure_rng_ctx_t *ctx) {
     return SECURE_RNG_SUCCESS;
 }
 
-secure_rng_error_t unlock(const secure_rng_ctx_t *ctx) {
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_unlock(const secure_rng_ctx_t *ctx) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!ctx->thread_safe) return SECURE_RNG_SUCCESS;
     
@@ -44,7 +44,7 @@ secure_rng_error_t unlock(const secure_rng_ctx_t *ctx) {
 // HELPER FUNCTIONS
 // ============================================================================
 
-void invoke_error_callback(
+SECURE_RNG_INTERNAL void secure_rng_invoke_error_callback(
     secure_rng_ctx_t *ctx,
     secure_rng_error_t error,
     const char *message
@@ -54,7 +54,7 @@ void invoke_error_callback(
     }
 }
 
-secure_rng_error_t collect_tested_entropy(
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_collect_tested_entropy(
     secure_rng_ctx_t *ctx,
     uint8_t *buffer,
     size_t size
@@ -65,7 +65,7 @@ secure_rng_error_t collect_tested_entropy(
 
     entropy_error_t entropy_err = entropy_get_bytes(ctx->entropy_ctx, buffer, size);
     if (entropy_err != ENTROPY_SUCCESS) {
-        invoke_error_callback(ctx, SECURE_RNG_ERROR_ENTROPY_FAILURE,
+        secure_rng_invoke_error_callback(ctx, SECURE_RNG_ERROR_ENTROPY_FAILURE,
                              "Failed to collect entropy from hardware sources");
         return SECURE_RNG_ERROR_ENTROPY_FAILURE;
     }
@@ -79,11 +79,11 @@ secure_rng_error_t collect_tested_entropy(
 
             if (health_err == HEALTH_ERROR_RCT_FAILURE) {
                 ctx->stats.rct_failures++;
-                invoke_error_callback(ctx, SECURE_RNG_ERROR_HEALTH_TEST_FAILED,
+                secure_rng_invoke_error_callback(ctx, SECURE_RNG_ERROR_HEALTH_TEST_FAILED,
                                     "Repetition Count Test failed - entropy source may be stuck");
             } else if (health_err == HEALTH_ERROR_APT_FAILURE) {
                 ctx->stats.apt_failures++;
-                invoke_error_callback(ctx, SECURE_RNG_ERROR_HEALTH_TEST_FAILED,
+                secure_rng_invoke_error_callback(ctx, SECURE_RNG_ERROR_HEALTH_TEST_FAILED,
                                     "Adaptive Proportion Test failed - loss of entropy detected");
             }
 
@@ -99,7 +99,7 @@ secure_rng_error_t collect_tested_entropy(
     return SECURE_RNG_SUCCESS;
 }
 
-int reseed_needed(const secure_rng_ctx_t *ctx) {
+SECURE_RNG_INTERNAL int secure_rng_reseed_needed(const secure_rng_ctx_t *ctx) {
     if (!ctx || !ctx->config.auto_reseed_enabled) {
         return 0;
     }
@@ -115,7 +115,7 @@ int reseed_needed(const secure_rng_ctx_t *ctx) {
  * VERIFIED-mode Bell certification (see header for the full contract).
  */
 #define SECURE_RNG_BELL_SAMPLES 2000
-secure_rng_error_t run_bell_certification(secure_rng_ctx_t *ctx) {
+SECURE_RNG_INTERNAL secure_rng_error_t secure_rng_run_bell_certification(secure_rng_ctx_t *ctx) {
     quantum_state_t state;
     if (quantum_state_init(&state, 2) != QS_SUCCESS) {
         return SECURE_RNG_ERROR_INITIALIZATION;
@@ -418,11 +418,11 @@ void secure_rng_free(secure_rng_ctx_t *ctx) {
 secure_rng_error_t secure_rng_reset(secure_rng_ctx_t *ctx) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
@@ -433,7 +433,7 @@ secure_rng_error_t secure_rng_reset(secure_rng_ctx_t *ctx) {
     health_tests_reset(ctx->health_ctx);
 
     secure_rng_error_t result = secure_rng_reseed(ctx);
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return result;
 }
 
@@ -449,7 +449,7 @@ secure_rng_error_t secure_rng_reseed(secure_rng_ctx_t *ctx) {
     }
 
     uint8_t reseed_entropy[RESEED_ENTROPY_SIZE];
-    secure_rng_error_t err = collect_tested_entropy(ctx, reseed_entropy, RESEED_ENTROPY_SIZE);
+    secure_rng_error_t err = secure_rng_collect_tested_entropy(ctx, reseed_entropy, RESEED_ENTROPY_SIZE);
 
     if (err != SECURE_RNG_SUCCESS) {
         secure_memzero(reseed_entropy, RESEED_ENTROPY_SIZE);
@@ -479,11 +479,11 @@ secure_rng_error_t secure_rng_reseed_with_entropy(
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!external_entropy || size == 0) return SECURE_RNG_ERROR_INVALID_PARAM;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
@@ -502,7 +502,7 @@ secure_rng_error_t secure_rng_reseed_with_entropy(
     }
 
     uint8_t hw_entropy[256];
-    secure_rng_error_t err = collect_tested_entropy(ctx, hw_entropy, sizeof(hw_entropy));
+    secure_rng_error_t err = secure_rng_collect_tested_entropy(ctx, hw_entropy, sizeof(hw_entropy));
     if (err != SECURE_RNG_SUCCESS) {
         secure_memzero(tested_entropy, size);
         secure_memzero(hw_entropy, sizeof(hw_entropy));
@@ -530,6 +530,6 @@ secure_rng_error_t secure_rng_reseed_with_entropy(
     ctx->bell_certified = 0;
     ctx->stats.last_reseed_time = time(NULL);
 
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }

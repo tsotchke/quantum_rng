@@ -12,11 +12,11 @@ secure_rng_error_t secure_rng_bytes(
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!buffer || size == 0) return SECURE_RNG_ERROR_NULL_BUFFER;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
@@ -26,13 +26,13 @@ secure_rng_error_t secure_rng_bytes(
                          SECURE_RNG_MODE_FAST : SECURE_RNG_MODE_QUANTUM;
     }
 
-    if (reseed_needed(ctx)) {
+    if (secure_rng_reseed_needed(ctx)) {
         secure_rng_error_t err = secure_rng_reseed(ctx);
         if (err != SECURE_RNG_SUCCESS) {
             if (ctx->config.zeroize_on_error) {
                 secure_memzero(buffer, size);
             }
-            unlock(ctx);
+            secure_rng_unlock(ctx);
             return err;
         }
     }
@@ -41,7 +41,7 @@ secure_rng_error_t secure_rng_bytes(
     
     switch (effective_mode) {
         case SECURE_RNG_MODE_FAST:
-            result = collect_tested_entropy(ctx, buffer, size);
+            result = secure_rng_collect_tested_entropy(ctx, buffer, size);
             if (result == SECURE_RNG_SUCCESS) {
                 ctx->stats.fast_mode_bytes += size;
             }
@@ -64,7 +64,7 @@ secure_rng_error_t secure_rng_bytes(
         case SECURE_RNG_MODE_VERIFIED:
             {
                 if (!ctx->bell_certified) {
-                    secure_rng_error_t cert = run_bell_certification(ctx);
+                    secure_rng_error_t cert = secure_rng_run_bell_certification(ctx);
                     if (cert != SECURE_RNG_SUCCESS) {
                         ctx->state = SECURE_RNG_STATE_ERROR;
                         ctx->stats.health_test_failures++;
@@ -98,7 +98,7 @@ secure_rng_error_t secure_rng_bytes(
         ctx->bytes_since_reseed += size;
     }
 
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return result;
 }
 
@@ -120,18 +120,18 @@ secure_rng_error_t secure_rng_double(secure_rng_ctx_t *ctx, double *value) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!value) return SECURE_RNG_ERROR_NULL_BUFFER;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
     *value = qrng_double(ctx->qrng_ctx);
     ctx->stats.requests_served++;
 
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }
 
@@ -145,18 +145,18 @@ secure_rng_error_t secure_rng_range32(
     if (!value) return SECURE_RNG_ERROR_NULL_BUFFER;
     if (min > max) return SECURE_RNG_ERROR_INVALID_RANGE;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
     *value = qrng_range32(ctx->qrng_ctx, min, max);
     ctx->stats.requests_served++;
 
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }
 
@@ -170,17 +170,17 @@ secure_rng_error_t secure_rng_range64(
     if (!value) return SECURE_RNG_ERROR_NULL_BUFFER;
     if (min > max) return SECURE_RNG_ERROR_INVALID_RANGE;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     if (ctx->state != SECURE_RNG_STATE_OPERATIONAL) {
-        unlock(ctx);
+        secure_rng_unlock(ctx);
         return SECURE_RNG_ERROR_NOT_INITIALIZED;
     }
 
     *value = qrng_range64(ctx->qrng_ctx, min, max);
     ctx->stats.requests_served++;
 
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }

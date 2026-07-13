@@ -1,13 +1,6 @@
 #ifndef SECURE_MEMORY_H
 #define SECURE_MEMORY_H
 
-/* Must be defined BEFORE any system header is included, otherwise glibc's
-   <features.h> has already locked in the feature set and explicit_bzero()
-   stays hidden under strict -std=c11. */
-#ifndef _DEFAULT_SOURCE
-#define _DEFAULT_SOURCE
-#endif
-
 #include <stddef.h>
 #include <string.h>
 
@@ -19,9 +12,9 @@
  * optimized away by compilers. Essential for clearing sensitive data
  * like cryptographic keys, quantum states, and entropy buffers.
  *
- * Uses platform-specific implementations when available:
- * - C11 memset_s() (Annex K)
- * - OpenBSD/glibc explicit_bzero()
+ * Uses platform-specific implementations when available, in this order:
+ * - OpenBSD/glibc explicit_bzero()        (preferred; never optimized away)
+ * - C11 memset_s() (Annex K)                  (where __STDC_LIB_EXT1__ set)
  * - Portable fallback with volatile writes + a compiler memory barrier
  *   (used on Windows/MinGW and anywhere the above are unavailable)
  */
@@ -31,12 +24,6 @@
  *
  * Guarantees that memory is zeroed and the operation is not optimized
  * away by the compiler. Critical for security-sensitive applications.
- *
- * This function:
- * - Cannot be optimized away (compiler-independent)
- * - Works across all platforms
- * - Has minimal performance overhead
- * - Is safe for use in destructors/cleanup code
  *
  * @param ptr Pointer to memory to zero
  * @param size Number of bytes to zero
@@ -48,12 +35,15 @@ static inline void secure_memzero(void *ptr, size_t size) {
     // C11 Annex K - memset_s
     memset_s(ptr, size, 0, size);
 
+#elif defined(__GLIBC__) || defined(__OpenBSD__) || defined(__FreeBSD__) || \
+      defined(__NetBSD__) || defined(__DragonFly__) || defined(__APPLE__)
+    // explicit_bzero() is exposed by default feature macros on these platforms
+    // (no late _DEFAULT_SOURCE hack needed) and is guaranteed non-optimizable.
+    explicit_bzero(ptr, size);
+
 #else
     // Portable fallback with volatile and a compiler memory barrier. Used on
-    // glibc too (we avoid explicit_bzero() because under strict -std=c11 the
-    // feature macro that exposes it is unavailable and the implicit-declaration
-    // warning is unavoidable without polluting every TU's feature set). The
-    // volatile writes + barrier guarantee the zeroing is not optimized away.
+    // Windows/MinGW and anywhere the above are unavailable.
     volatile unsigned char *p = (volatile unsigned char *)ptr;
     while (size--) {
         *p++ = 0;

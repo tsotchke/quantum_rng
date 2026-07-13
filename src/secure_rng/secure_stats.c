@@ -10,12 +10,12 @@ secure_rng_error_t secure_rng_get_stats(
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     if (!stats) return SECURE_RNG_ERROR_NULL_BUFFER;
 
-    secure_rng_error_t lock_err = lock_read(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_read(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
 
     memcpy(stats, &ctx->stats, sizeof(*stats));
     
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }
 
@@ -127,7 +127,7 @@ const char* secure_rng_error_string(secure_rng_error_t error) {
         case SECURE_RNG_ERROR_MUTEX_LOCK:
             return "Mutex lock failed";
         case SECURE_RNG_ERROR_MUTEX_UNLOCK:
-            return "Mutex unlock failed";
+            return "Mutex secure_rng_unlock failed";
         default:
             return "Unknown error";
     }
@@ -145,13 +145,13 @@ secure_rng_mode_t secure_rng_get_mode(const secure_rng_ctx_t *ctx) {
 secure_rng_error_t secure_rng_set_mode(secure_rng_ctx_t *ctx, secure_rng_mode_t mode) {
     if (!ctx) return SECURE_RNG_ERROR_NULL_CONTEXT;
     
-    secure_rng_error_t lock_err = lock_write(ctx);
+    secure_rng_error_t lock_err = secure_rng_lock_write(ctx);
     if (lock_err != SECURE_RNG_SUCCESS) return lock_err;
     
     ctx->config.mode = mode;
     ctx->stats.current_mode = mode;
     
-    unlock(ctx);
+    secure_rng_unlock(ctx);
     return SECURE_RNG_SUCCESS;
 }
 
