@@ -25,7 +25,8 @@ static double get_chi_square_critical(int df) {
 }
 
 // Test helper functions
-static void print_distribution(const char* test_name, int* results, int sides) {
+// Returns 1 if the distribution passes the chi-square uniformity check, 0 otherwise.
+static int print_distribution(const char* test_name, int* results, int sides) {
     printf("\n%s Distribution:\n", test_name);
     printf("Face\tCount\tFrequency\tExpected\tDifference\n");
     printf("----\t-----\t---------\t---------\t----------\n");
@@ -46,26 +47,28 @@ static void print_distribution(const char* test_name, int* results, int sides) {
     double critical_value = get_chi_square_critical(sides - 1);
     printf("\nChi-square statistic: %.4f\n", chi_square);
     printf("Critical value (95%%): %.4f\n", critical_value);
-    printf("Result: %s (95%% confidence)\n", 
-           chi_square < critical_value ? "PASS" : "FAIL");
+    int pass = (chi_square < critical_value);
+    printf("Result: %s (95%% confidence)\n", pass ? "PASS" : "FAIL");
+    return pass;
 }
 
 // Test cases
-static void test_d6_distribution() {
+// Returns 1 if all statistical checks passed, 0 otherwise.
+static int test_d6_distribution() {
     printf("\n=== Testing D6 Distribution ===\n");
     
     qrng_ctx *ctx;
     qrng_error err = qrng_init(&ctx, NULL, 0);
     if (err != QRNG_SUCCESS) {
         fprintf(stderr, "Failed to initialize QRNG: %s\n", qrng_error_string(err));
-        return;
+        return 0;
     }
     
     quantum_dice_t *dice = quantum_dice_create(ctx, 6);
     if (!dice) {
         fprintf(stderr, "Failed to create quantum dice\n");
         qrng_free(ctx);
-        return;
+        return 0;
     }
     
     int results[6] = {0};
@@ -76,23 +79,26 @@ static void test_d6_distribution() {
         }
     }
     
-    print_distribution("D6", results, 6);
+    int pass = print_distribution("D6", results, 6);
     
     quantum_dice_free(dice);
     qrng_free(ctx);
+    return pass;
 }
 
-static void test_fairness_across_sizes() {
+// Returns 1 if all dice sizes passed, 0 otherwise.
+static int test_fairness_across_sizes() {
     printf("\n=== Testing Fairness Across Different Dice Sizes ===\n");
     
     int sizes[] = {4, 6, 8, 10, 12, 20};
     int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
+    int all_pass = 1;
     
     qrng_ctx *ctx;
     qrng_error err = qrng_init(&ctx, NULL, 0);
     if (err != QRNG_SUCCESS) {
         fprintf(stderr, "Failed to initialize QRNG: %s\n", qrng_error_string(err));
-        return;
+        return 0;
     }
     
     for (int s = 0; s < num_sizes; s++) {
@@ -102,6 +108,7 @@ static void test_fairness_across_sizes() {
         quantum_dice_t *dice = quantum_dice_create(ctx, sides);
         if (!dice) {
             fprintf(stderr, "Failed to create d%d\n", sides);
+            all_pass = 0;
             continue;
         }
         
@@ -113,30 +120,32 @@ static void test_fairness_across_sizes() {
             }
         }
         
-        print_distribution("Distribution", results, sides);
+        if (!print_distribution("Distribution", results, sides)) all_pass = 0;
         
         free(results);
         quantum_dice_free(dice);
     }
     
     qrng_free(ctx);
+    return all_pass;
 }
 
-static void test_sequential_independence() {
+// Returns 1 if the sequential-independence (pair) chi-square passed, 0 otherwise.
+static int test_sequential_independence() {
     printf("\n=== Testing Sequential Independence ===\n");
     
     qrng_ctx *ctx;
     qrng_error err = qrng_init(&ctx, NULL, 0);
     if (err != QRNG_SUCCESS) {
         fprintf(stderr, "Failed to initialize QRNG: %s\n", qrng_error_string(err));
-        return;
+        return 0;
     }
     
     quantum_dice_t *dice = quantum_dice_create(ctx, 6);
     if (!dice) {
         fprintf(stderr, "Failed to create quantum dice\n");
         qrng_free(ctx);
-        return;
+        return 0;
     }
     
     // Track pairs of consecutive rolls
@@ -164,11 +173,12 @@ static void test_sequential_independence() {
     double critical_value = get_chi_square_critical(35); // 36 pairs - 1 df
     printf("Chi-square statistic for pairs: %.4f\n", chi_square);
     printf("Critical value (95%%): %.4f\n", critical_value);
-    printf("Result: %s (95%% confidence)\n", 
-           chi_square < critical_value ? "PASS" : "FAIL");
+    int pass = (chi_square < critical_value);
+    printf("Result: %s (95%% confidence)\n", pass ? "PASS" : "FAIL");
     
     quantum_dice_free(dice);
     qrng_free(ctx);
+    return pass;
 }
 
 static void test_stress() {
@@ -212,12 +222,18 @@ static void test_stress() {
 
 int main() {
     printf("=== Quantum Dice Test Suite ===\n");
-    
-    test_d6_distribution();
-    test_fairness_across_sizes();
-    test_sequential_independence();
+
+    int failures = 0;
+    if (!test_d6_distribution())      failures++;
+    if (!test_fairness_across_sizes()) failures++;
+    if (!test_sequential_independence()) failures++;
     test_stress();
-    
+
     printf("\nAll tests completed.\n");
+    if (failures > 0) {
+        printf("RESULT: FAIL (%d statistical check(s) failed)\n", failures);
+        return 1;
+    }
+    printf("RESULT: PASS\n");
     return 0;
 }

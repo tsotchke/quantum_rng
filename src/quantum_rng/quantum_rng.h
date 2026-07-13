@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <unistd.h>
+#include <sys/types.h>
 #include <sys/time.h>
 
 /**
@@ -157,10 +158,14 @@ uint64_t qrng_range64(qrng_ctx *ctx, uint64_t min, uint64_t max);
 /**
  * @brief Get entropy estimate
  *
- * Returns an estimate of the entropy per bit in the RNG output.
+ * Returns the Shannon entropy of the generated output stream, measured in
+ * BITS PER BYTE, in the range [0, 8]. A good uniform PRNG returns ~8.0.
+ *
+ * This getter is PURE: it measures a private copy of the context, so calling
+ * it does NOT advance the caller's RNG stream (no hidden side effects).
  *
  * @param ctx RNG context
- * @return Estimated entropy per bit (between 0 and 1)
+ * @return Estimated entropy in bits per byte, in [0, 8]
  */
 double qrng_get_entropy_estimate(qrng_ctx *ctx);
 

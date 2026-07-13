@@ -1,3 +1,14 @@
+/* Portable math constants: strict -std=c11 does not expose M_PI/M_E from
+   <math.h> without a feature-test macro, and some libc/compiler combos still
+   omit them. Guard-define so the file compiles cleanly with `gcc -std=c11`
+   (the build the upstream Makefile uses) without relying on -D_DEFAULT_SOURCE. */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+#ifndef M_E
+#define M_E 2.71828182845904523536
+#endif
+
 #include "quantum_rng.h"
 #include "../common/secure_memory.h"
 #include <stdlib.h>
@@ -96,7 +107,6 @@ static uint64_t get_system_entropy(void) {
     
     // Mix in CPU cycle count if available
     #if defined(__x86_64__) || defined(__i386__)
-    unsigned int aux;
     entropy ^= __builtin_ia32_rdtsc();
     #endif
     
@@ -490,18 +500,36 @@ uint64_t qrng_range64(qrng_ctx *ctx, uint64_t min, uint64_t max) {
 
 double qrng_get_entropy_estimate(qrng_ctx *ctx) {
     if (!ctx) return 0.0;
-    
-    // Calculate entropy estimate from the entropy pool
-    double entropy = 0.0;
-    for (int i = 0; i < 16; i++) {
-        entropy += -log2(ctx->entropy_pool[i] + 1e-10);
+
+    /* Measure a PRIVATE COPY so this getter is pure: it must not advance the
+       caller's RNG stream (the old version called qrng_bytes() on ctx, a hidden
+       ​4096-byte side effect that broke reproducible seeded streams). */
+    qrng_ctx copy;
+    memcpy(&copy, ctx, sizeof(copy));
+
+    /* Real measured Shannon entropy of the GENERATED output stream.
+       We sample N bytes, histogram them, and compute
+           H = -sum_b p_b * log2(p_b)        (bits per byte)
+       This is what an entropy estimator is SUPPOSED to return: a property
+       of the actual output, not of the internal entropy-pool doubles. For a
+       good uniform PRNG this is ≈ 8.0 bits/byte. The old estimator summed
+       -log2(pool_double + 1e-10) and divided by 17, returning a meaningless
+       ~1.3 bits/byte (see AUDIT.md §4b/§4d) — replaced 2026-07-12. */
+    enum { N = 4096, NBINS = 256 };
+    uint8_t buf[N];
+    size_t hist[NBINS];
+    memset(hist, 0, sizeof(hist));
+    qrng_bytes(&copy, buf, N);
+    for (int i = 0; i < N; i++) hist[buf[i]]++;
+
+    double H = 0.0;
+    const double invN = 1.0 / (double)N;
+    for (int b = 0; b < NBINS; b++) {
+        if (hist[b] == 0) continue;
+        double p = (double)hist[b] * invN;
+        H -= p * log2(p);
     }
-    
-    // Include runtime entropy in the estimate (skipped in seeded mode)
-    if (!ctx->seeded) ctx->runtime_entropy = get_runtime_entropy(ctx);
-    entropy += -log2((double)(ctx->runtime_entropy & 0xFF) / 256.0 + 1e-10);
-    
-    return entropy / 17.0;  // Average over all sources
+    return H;  /* bits per byte, in [0, 8] */
 }
 
 qrng_error qrng_entangle_states(qrng_ctx *ctx, uint8_t *state1, uint8_t *state2, size_t len) {
