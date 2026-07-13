@@ -5,6 +5,7 @@
  * / qrng_v3_extract_grover_entropy, referenced by the generation and grover modules via
  * v3_internal.h.
  */
+#include "v3_internal.h"
 #include "quantum_rng_v3.h"
 #include "quantum_constants.h"
 #include "simd_ops.h"

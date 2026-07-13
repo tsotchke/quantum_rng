@@ -6,6 +6,7 @@
  *   Layer 2 (quantum): quantum simulation, fed by Layer 1
  *   Layer 3 (output):  conditioned random output
  */
+#include "v3_internal.h"
 #include "quantum_rng_v3.h"
 #include "quantum_constants.h"
 #include "simd_ops.h"

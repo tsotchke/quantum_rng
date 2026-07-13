@@ -34,6 +34,9 @@ extern "C" {
 
 #define STARTUP_ENTROPY_SIZE 2048
 #define RESEED_ENTROPY_SIZE 1024
+#define MIN_ENTROPY_FOR_RESEED 256
+#define DEFAULT_RESEED_INTERVAL (1024 * 1024)  /* 1MB */
+#define DEFAULT_HYBRID_THRESHOLD 1024          /* FAST < 1KB, QUANTUM >= 1KB */
 #ifdef __cplusplus
 extern "C" {
 #endif
